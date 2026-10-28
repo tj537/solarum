@@ -1871,7 +1871,7 @@ impl SolarumApp {
 
     /// Solari says something in the log
     fn bunk(&mut self, text: impl AsRef<str>, now: f64) {
-        self.log.push(format!("Solari: {}", text.as_ref()), now);
+        self.log.push(text.as_ref(), now);
     }
 
     /// A command typed into the terminal – Solari runs the auto mode, so it answers
