@@ -877,6 +877,18 @@ impl SolarumApp {
         };
     }
 
+    /// The dice on every track that's on (and not locked): new patterns, same vibe, key and
+    /// sounds; returns how many rolled
+    fn dice_all(&mut self) -> usize {
+        let on: Vec<usize> = (0..TRACKS)
+            .filter(|&i| !self.song.tracks[i].mute && !self.song.tracks[i].lock)
+            .collect();
+        for &i in &on {
+            self.roll_track(i);
+        }
+        on.len()
+    }
+
     fn send(&self, cmd: Cmd) {
         let _ = self.tx.send(cmd);
     }
@@ -1885,7 +1897,11 @@ impl SolarumApp {
                 now,
             ),
             "shuffle" | "roll" | "again" | "next" | "new" => {
-                self.shuffle(self.song.vibe, now);
+                let n = self.dice_all();
+                if n == 0 {
+                    self.bunk("Every track is off or locked, bro. Nothing to roll.", now);
+                    return;
+                }
                 const QUIPS: [&str; 4] = [
                     "Rolled it, bro. Smells like fresh techno.",
                     "New groove, same orbit. Let's get it.",
@@ -2916,9 +2932,16 @@ impl SolarumApp {
         );
         let vibe_r = Rect::from_min_size(row.min, vec2(row.width() * 0.62 - 3.0, row.height()));
         let shuf_r = Rect::from_min_max(pos2(vibe_r.right() + 6.0, row.top()), row.max);
-        let label = format!("VIBE: {}", self.song.vibe.name().to_uppercase());
-        let vibe = key(ui, vibe_r, "os_vibe", &label, true).on_hover_text("Pick the vibe – Solari rolls a groove in it");
-        let shuf = key(ui, shuf_r, "os_shuffle", "SHUFFLE", true).on_hover_text("A whole new groove in this vibe (Enter)");
+        let vibe = key(ui, vibe_r, "os_vibe", "PICK A GENRE", true)
+            .on_hover_text(format!("Now: {} – pick one and Solari rolls a groove in it", self.song.vibe.name()));
+        // A little arrow: it opens a list
+        let c = pos2(vibe_r.right() - 10.0, vibe_r.center().y);
+        p.add(egui::Shape::convex_polygon(
+            vec![c + vec2(-4.0, -2.0), c + vec2(4.0, -2.0), c + vec2(0.0, 3.0)],
+            ACID,
+            egui::Stroke::NONE,
+        ));
+        let shuf = key(ui, shuf_r, "os_shuffle", "SHUFFLE", true).on_hover_text("Rolls the dice on every track that's on");
         let popup = ui.make_persistent_id("term_vibes");
         if vibe.clicked() {
             ui.memory_mut(|m| m.toggle_popup(popup));
@@ -4252,6 +4275,20 @@ mod tests {
         app.start_song(0, 0.0);
         app.stop_song(0.0);
         assert_eq!(app.song_form, None);
+    }
+
+    #[test]
+    fn shuffle_rolls_only_the_tracks_that_are_on() {
+        let mut app = SolarumApp::headless(Song::default(), View::Planets, false);
+        app.shuffle(Vibe::Peak, 0.0);
+        app.song.tracks[1].mute = true;
+        app.song.tracks[2].lock = true;
+        let before = app.song;
+        app.command("shuffle", 0.0);
+        assert_eq!(app.song.tracks[1].steps, before.tracks[1].steps, "a muted track stays");
+        assert_eq!(app.song.tracks[2].steps, before.tracks[2].steps, "a locked track stays");
+        assert_eq!((app.song.vibe, app.song.root, app.song.bpm), (before.vibe, before.root, before.bpm));
+        assert!((0..8).any(|i| app.song.tracks[i].steps != before.tracks[i].steps));
     }
 
     #[test]
