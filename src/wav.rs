@@ -14,6 +14,15 @@ pub fn encode(samples: &[f32], sr: u32) -> Vec<u8> {
 }
 
 pub fn encode_i16(samples: &[i16], sr: u32) -> Vec<u8> {
+    encode_channels(samples, sr, 2)
+}
+
+/// One channel (the sample library)
+pub fn encode_mono_i16(samples: &[i16], sr: u32) -> Vec<u8> {
+    encode_channels(samples, sr, 1)
+}
+
+fn encode_channels(samples: &[i16], sr: u32, channels: u16) -> Vec<u8> {
     let data_len = (samples.len() * 2) as u32;
     let mut out = Vec::with_capacity(44 + data_len as usize);
     out.extend_from_slice(b"RIFF");
@@ -21,10 +30,10 @@ pub fn encode_i16(samples: &[i16], sr: u32) -> Vec<u8> {
     out.extend_from_slice(b"WAVEfmt ");
     out.extend_from_slice(&16u32.to_le_bytes()); // chunk size
     out.extend_from_slice(&1u16.to_le_bytes()); // PCM
-    out.extend_from_slice(&2u16.to_le_bytes()); // stereo
+    out.extend_from_slice(&channels.to_le_bytes());
     out.extend_from_slice(&sr.to_le_bytes());
-    out.extend_from_slice(&(sr * 4).to_le_bytes()); // bytes per second
-    out.extend_from_slice(&4u16.to_le_bytes()); // block align
+    out.extend_from_slice(&(sr * 2 * channels as u32).to_le_bytes()); // bytes per second
+    out.extend_from_slice(&(2 * channels).to_le_bytes()); // block align
     out.extend_from_slice(&16u16.to_le_bytes()); // bits
     out.extend_from_slice(b"data");
     out.extend_from_slice(&data_len.to_le_bytes());

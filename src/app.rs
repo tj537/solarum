@@ -7,10 +7,13 @@ use crate::engine::{Arrangement, Cmd, Event, Fx, Shared};
 use crate::file::{self, SolarumFile};
 use crate::form::FORMS;
 use crate::gen;
+use crate::library::{Library, SlotIds};
+use crate::library_ui::{LibraryUi, Out as LibOut};
 use crate::midi::{Midi, MidiIn};
 use crate::orbit::{self, Live, Paint};
 use crate::pads;
 use crate::rng::Rng;
+use crate::sampler::{slot_of, SampleBuf, Slots, CUSTOM, SAMPLE_SLOTS};
 use crate::song::{Song, Track, Vibe, Voice, MOODS, STEPS, TRACKS};
 use crate::theme::*;
 use crate::update::{self, Release};
@@ -101,6 +104,8 @@ pub struct Session {
     pub slots: [Option<Song>; SLOTS],
     pub names: [String; SLOTS],
     pub project: Option<PathBuf>,
+    /// Your own sounds in the project's slots (library ids)
+    pub samples: SlotIds,
 }
 
 impl Session {
@@ -243,6 +248,14 @@ pub struct SolarumApp {
     face_window: bool,
     /// For screenshots: pretend to play at this position
     pub fake_live: Option<Live>,
+    /// Your own sounds: the library, its screen, the project's slots (and as last saved)
+    pub library: Library,
+    pub lib_ui: LibraryUi,
+    pub sample_slots: SlotIds,
+    saved_samples: SlotIds,
+    /// What the engine has in its slots, and buffers it may still hold (dropped once it let go)
+    samples_sent: Slots,
+    retired: Vec<Arc<SampleBuf>>,
 }
 
 impl SolarumApp {
@@ -295,6 +308,8 @@ impl SolarumApp {
             .and_then(|s| eframe::get_value::<Option<String>>(s, "project"))
             .flatten()
             .map(PathBuf::from);
+        app.library = Library::open();
+        app.sample_slots = cc.storage.and_then(|s| eframe::get_value(s, "sample_slots")).unwrap_or_default();
         let last = app.session();
         app.new_project();
         app.log = crate::log::Log::new();
@@ -435,6 +450,12 @@ impl SolarumApp {
             on_start: OnStart::Wait,
             keep_tempo: false,
             fake_live: None,
+            library: Library::in_memory(),
+            lib_ui: LibraryUi::default(),
+            sample_slots: [0; SAMPLE_SLOTS],
+            saved_samples: [0; SAMPLE_SLOTS],
+            samples_sent: Default::default(),
+            retired: Vec::new(),
         }
     }
 
@@ -462,6 +483,7 @@ impl SolarumApp {
         self.tx = tx;
         self.events = events;
         self.sent = self.song;
+        self.samples_sent = Default::default();
         self.fx_sent = [false; 6];
         self.audio_device = audio::default_device_name();
         if was_playing {
@@ -677,9 +699,11 @@ impl SolarumApp {
             return;
         }
         self.song.tracks[i].sound = sound;
-        let name = voice.sounds()[sound as usize];
+        let name = self.sound_label(i);
+        let built_in = |s: u8| slot_of(s).is_none();
         // With SOLAR OS on, a sound of another family gets a fitting line – by hand your line stays
-        if voice == Voice::Acid && self.song.auto && gen::synth_family(old) != gen::synth_family(sound) {
+        if voice == Voice::Acid && self.song.auto && built_in(old) && built_in(sound) && gen::synth_family(old) != gen::synth_family(sound)
+        {
             self.roll_track(i);
             self.say(format!("{name}: new line to fit the sound (undo keeps the old one)"), now);
         } else {
@@ -687,6 +711,54 @@ impl SolarumApp {
         }
         if !self.playing() {
             self.preview = Some(voice);
+        }
+    }
+
+    /// The name of a track's sound – a built-in one, or yours from the library
+    fn sound_label(&self, i: usize) -> String {
+        let voice = Voice::ALL[i];
+        match slot_of(self.song.tracks[i].sound) {
+            Some(k) => self
+                .library
+                .get(self.sample_slots[k])
+                .map_or("Missing sound".into(), |e| e.name.clone()),
+            None => self.song.sound_name(voice).to_string(),
+        }
+    }
+
+    /// Keep the engine's slots in step with the project's (and the edits in the library), and
+    /// tracks only on sounds that belong to them
+    fn sync_samples(&mut self) {
+        let want: Slots = std::array::from_fn(|k| match self.sample_slots[k] {
+            0 => None,
+            id => self.library.sound(id),
+        });
+        let same = want.iter().zip(&self.samples_sent).all(|(a, b)| match (a, b) {
+            (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+            (None, None) => true,
+            _ => false,
+        });
+        if !same {
+            let old = std::mem::replace(&mut self.samples_sent, want.clone());
+            self.retired.extend(old.into_iter().flatten());
+            self.send(Cmd::Samples(Box::new(want)));
+        }
+        // Freed here once the engine let go (it never frees on the audio thread)
+        self.retired.retain(|b| Arc::strong_count(b) > 1);
+        // A sound that left the project, or moved to another track, leaves the tracks it was on
+        let owner: [Option<Voice>; SAMPLE_SLOTS] = std::array::from_fn(|k| self.library.get(self.sample_slots[k]).map(|e| e.voice));
+        let fix = |song: &mut Song| {
+            for (t, v) in song.tracks.iter_mut().zip(Voice::ALL) {
+                if let Some(k) = slot_of(t.sound) {
+                    if owner[k] != Some(v) {
+                        t.sound = 0;
+                    }
+                }
+            }
+        };
+        fix(&mut self.song);
+        for s in self.slots.iter_mut().flatten() {
+            fix(s);
         }
     }
 
@@ -943,6 +1015,7 @@ impl SolarumApp {
             }
             Action::Settings => self.settings = true,
             Action::Help => self.help = true,
+            Action::Sounds => self.lib_ui.show_for(None),
         }
     }
 
@@ -953,6 +1026,7 @@ impl SolarumApp {
             slots: self.slots,
             names: self.names.clone(),
             project: self.project.clone(),
+            samples: self.sample_slots,
         }
     }
 
@@ -963,6 +1037,7 @@ impl SolarumApp {
         self.slots = s.slots;
         self.names = s.names;
         self.project = s.project;
+        self.sample_slots = s.samples;
         self.slot_now = None;
         self.queued_slot = None;
         self.mark_saved_if_unchanged_on_disk();
@@ -993,6 +1068,7 @@ impl SolarumApp {
         self.song_form = None;
         self.send_arrangement();
         self.project = None;
+        self.sample_slots = [0; SAMPLE_SLOTS];
         self.mark_saved();
         self.log = crate::log::Log::new();
         self.log.push("Empty sky. Paint planets on the orbits, or switch me on below.", 0.0);
@@ -1001,6 +1077,7 @@ impl SolarumApp {
     /// What's here now counts as saved
     fn mark_saved(&mut self) {
         self.saved = Some((self.song.tracks, self.slots, self.names.clone()));
+        self.saved_samples = self.sample_slots;
     }
 
     /// Continue: the project counts as saved if its file still holds the same
@@ -1024,6 +1101,7 @@ impl SolarumApp {
                 now.song.tracks.map(|t| (t.steps, t.sound, t.mute)) != tracks.map(|t| (t.steps, t.sound, t.mute))
                     || &now.slots != slots
                     || &now.names != names
+                    || now.samples != self.saved_samples
             }
             None => now.has_work(),
         }
@@ -1114,6 +1192,8 @@ impl SolarumApp {
             song: self.song,
             scenes: self.slots.to_vec(),
             names: self.names.to_vec(),
+            sample_slots: self.sample_slots.to_vec(),
+            samples: self.library.pack(&self.sample_slots),
             ..Default::default()
         };
         match f.save(&path) {
@@ -1147,6 +1227,8 @@ impl SolarumApp {
             self.slots[i] = f.scenes.get(i).copied().flatten();
             self.names[i] = f.names.get(i).cloned().unwrap_or_default();
         }
+        self.library.unpack(&f.samples);
+        self.sample_slots = std::array::from_fn(|k| f.sample_slots.get(k).copied().unwrap_or(0));
         self.slot_now = None;
         self.queued_slot = None;
         self.song_form = None;
@@ -2417,7 +2499,7 @@ impl SolarumApp {
             p.text(
                 sound_rect.left_center() + vec2(8.0, 0.0),
                 Align2::LEFT_CENTER,
-                self.song.sound_name(voice),
+                crate::widgets::fit_text(&p, &self.sound_label(i), bold(11.0), sound_rect.width() - 24.0),
                 bold(11.0),
                 if muted { DIM } else { mix(color, TEXT, 0.35) },
             );
@@ -2446,6 +2528,7 @@ impl SolarumApp {
             }
             let mut picked = None;
             let mut shaped = false;
+            let mut open_library = false;
             egui::popup_below_widget(ui, popup, &sound, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
                 ui.set_min_width(170.0);
                 ui.label(
@@ -2460,6 +2543,32 @@ impl SolarumApp {
                     {
                         picked = Some(k as u8);
                     }
+                }
+                // Yours: the project's sounds for this track
+                let mine: Vec<(usize, String)> = (0..SAMPLE_SLOTS)
+                    .filter_map(|k| {
+                        let e = self.library.get(self.sample_slots[k])?;
+                        (e.voice == voice).then(|| (k, e.name.clone()))
+                    })
+                    .collect();
+                ui.separator();
+                if !mine.is_empty() {
+                    ui.label(egui::RichText::new("YOUR SOUNDS").font(bold(10.5)).color(FAINT));
+                    for (k, name) in mine {
+                        let sound = CUSTOM + k as u8;
+                        let text = egui::RichText::new(format!("{}  {name}", ph::WAVEFORM)).font(bold(13.0));
+                        if ui.selectable_label(self.song.tracks[i].sound == sound, text).clicked() {
+                            picked = Some(sound);
+                        }
+                    }
+                }
+                if ui
+                    .button(egui::RichText::new(format!("{}  Your sounds…", ph::FOLDER_SIMPLE_PLUS)).font(bold(12.0)))
+                    .on_hover_text("Record, import and cut your own – up to 8 in a project")
+                    .clicked()
+                {
+                    open_library = true;
+                    ui.close_menu();
                 }
                 ui.separator();
                 // Tune and decay: shape the sound
@@ -2501,6 +2610,9 @@ impl SolarumApp {
             });
             if let Some(k) = picked {
                 self.set_sound(i, k, now);
+            }
+            if open_library {
+                self.lib_ui.show_for(Some(voice));
             }
             // Hear the change while stopped (not more often than every 150 ms)
             if shaped && !self.playing() && now - self.last_preview > 0.15 {
@@ -3607,6 +3719,7 @@ impl eframe::App for SolarumApp {
         eframe::set_value(storage, "song", &self.song);
         eframe::set_value(storage, "view", &self.view);
         eframe::set_value(storage, "slots", &self.slots);
+        eframe::set_value(storage, "sample_slots", &self.sample_slots);
         eframe::set_value(storage, "project", &self.project.as_ref().map(|p| p.display().to_string()));
         eframe::set_value(storage, "fav_names", &self.names.to_vec());
         eframe::set_value(storage, "slot_now", &self.slot_now);
@@ -3628,7 +3741,7 @@ impl SolarumApp {
         let now = ctx.input(|i| i.time);
         let dt = ctx.input(|i| i.stable_dt).min(0.1);
         let live = self.sync(ctx, now, dt);
-        if !self.home {
+        if !self.home && !self.lib_ui.open {
             self.keys(ctx, now);
         }
         let state = self.log_state();
@@ -3653,6 +3766,20 @@ impl SolarumApp {
 
         // A .solarum file dropped onto the window
         let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().filter_map(|f| f.path.clone()).collect());
+        let audio: Vec<PathBuf> = dropped
+            .iter()
+            .filter(|p| {
+                p.extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|e| crate::library::EXTENSIONS.contains(&e.to_lowercase().as_str()))
+            })
+            .cloned()
+            .collect();
+        if !audio.is_empty() {
+            // Audio goes into the library (and opens it)
+            self.lib_ui.open = true;
+            self.lib_ui.import(&mut self.library, &audio, now);
+        }
         if let Some(path) = dropped.into_iter().find(|p| p.extension().is_some_and(|e| e == file::EXTENSION)) {
             self.open_file(Some(path), now);
         }
@@ -3661,6 +3788,40 @@ impl SolarumApp {
             self.face_viewport(ctx, &live, now);
         }
         let frame = |fill: Color32, margin: f32| egui::Frame::new().fill(fill).inner_margin(margin);
+        if self.lib_ui.open {
+            concrete(&ctx.layer_painter(egui::LayerId::background()), ctx.screen_rect());
+            let playhead = match self.shared.audition.load(Ordering::Relaxed) {
+                u64::MAX => None,
+                p => Some(p as f64),
+            };
+            let mut outs = Vec::new();
+            egui::CentralPanel::default()
+                .frame(frame(Color32::TRANSPARENT, 0.0))
+                .show(ctx, |ui| {
+                    outs = self.lib_ui.show(ui, &mut self.library, &mut self.sample_slots, playhead, now);
+                });
+            for o in outs {
+                match o {
+                    LibOut::Back => {
+                        self.lib_ui.open = false;
+                        self.send(Cmd::Audition(None, false));
+                    }
+                    LibOut::Audition(buf, looped) => {
+                        if let Some(b) = &buf {
+                            self.retired.push(b.clone());
+                        }
+                        self.send(Cmd::Audition(buf, looped));
+                    }
+                    LibOut::Assign(voice, k) => {
+                        self.song.track_mut(voice).sound = CUSTOM + k as u8;
+                    }
+                }
+            }
+            self.sync_samples();
+            self.finish_frame(now);
+            return;
+        }
+        self.sync_samples();
         if self.home {
             concrete(&ctx.layer_painter(egui::LayerId::background()), ctx.screen_rect());
             let update = self
@@ -3679,6 +3840,7 @@ impl SolarumApp {
                     });
                     act = crate::home::home(
                         ui,
+                        self.library.entries.len(),
                         &self.recent_cache,
                         self.last_session.as_ref().map(|l| &l.song).zip(name.as_deref()),
                         update.as_deref(),

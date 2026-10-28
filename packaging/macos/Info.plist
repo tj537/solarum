@@ -24,5 +24,7 @@
     <string>public.app-category.music</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Solarum records your own sounds from the microphone or an audio interface.</string>
 </dict>
 </plist>

@@ -31,6 +31,8 @@ pub enum Action {
     Forget(usize),
     Settings,
     Help,
+    /// The SOUNDS screen: your library
+    Sounds,
 }
 
 /// Read the recent projects (their grooves for the pictures, and when they were saved)
@@ -144,7 +146,7 @@ fn about(song: &Song) -> String {
 }
 
 /// The start screen; returns what was clicked. `demo` is shown when there's nothing from last time.
-pub fn home(ui: &mut Ui, recent: &[Recent], last: Option<(&Song, &str)>, update: Option<&str>) -> Option<Action> {
+pub fn home(ui: &mut Ui, sounds: usize, recent: &[Recent], last: Option<(&Song, &str)>, update: Option<&str>) -> Option<Action> {
     let mut action = None;
     let full = ui.max_rect();
     let p = ui.painter().clone();
@@ -192,9 +194,10 @@ pub fn home(ui: &mut Ui, recent: &[Recent], last: Option<(&Song, &str)>, update:
     let bh = 54.0;
     let gap = 12.0;
     // New project and Open side by side
-    let new_r = Rect::from_min_size(pos2(hero.left(), y), vec2(250.0, bh));
-    let open_r = Rect::from_min_size(pos2(new_r.right() + gap, y), vec2(170.0, bh));
-    let row_right = open_r.right();
+    let new_r = Rect::from_min_size(pos2(hero.left(), y), vec2(220.0, bh));
+    let open_r = Rect::from_min_size(pos2(new_r.right() + gap, y), vec2(130.0, bh));
+    let sounds_r = Rect::from_min_size(pos2(open_r.right() + gap, y), vec2(150.0, bh));
+    let row_right = sounds_r.right();
     let button = |ui: &mut Ui, r: Rect, id: &str, icon: &str, title: &str, primary: bool| {
         let resp = ui.interact(r, ui.id().with(id), Sense::click());
         let hot = resp.hovered();
@@ -234,6 +237,17 @@ pub fn home(ui: &mut Ui, recent: &[Recent], last: Option<(&Song, &str)>, update:
         .clicked()
     {
         action = Some(Action::Open);
+    }
+    let tip = match sounds {
+        0 => "Your own sounds: record, import and cut them".to_string(),
+        1 => "Your library: 1 sound".to_string(),
+        n => format!("Your library: {n} sounds"),
+    };
+    if button(ui, sounds_r, "sounds", ph::WAVEFORM, "Sounds", false)
+        .on_hover_text(tip)
+        .clicked()
+    {
+        action = Some(Action::Sounds);
     }
     y += bh + gap;
     // Back to the project that's open (or was last time) – its own button, with what it is

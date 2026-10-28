@@ -237,6 +237,41 @@ mod tests {
                 ..playing(66.2, &[0, 1, 3, 6])
             });
         });
+        // The SOUNDS screen: a few sounds, a loop cut into slices, three of them in the project
+        render("sounds", 1360.0, 860.0, |app| {
+            use crate::song::Voice;
+            let sr = crate::sampler::SAMPLE_SR;
+            let mut rng = crate::rng::Rng::new(5);
+            let kick: Vec<f32> = (0..(sr * 0.5) as usize)
+                .map(|i| {
+                    let t = i as f32 / sr;
+                    (std::f32::consts::TAU * (50.0 * t + 90.0 * (1.0 - (-t / 0.03).exp()) * 0.03)).sin() * (-t / 0.18).exp()
+                })
+                .collect();
+            let lib = &mut app.library;
+            let k = lib.add("Kitchen kick", Voice::Kick, kick);
+            let hits = |rng: &mut crate::rng::Rng, len: f32, every: f32| -> Vec<f32> {
+                (0..(sr * len) as usize)
+                    .map(|i| {
+                        let t = (i as f32 / sr) % every;
+                        let n = rng.noise();
+                        n * (-t / 0.05).exp() * 0.8 + n * 0.01
+                    })
+                    .collect()
+            };
+            lib.add("Door knock", Voice::Rim, hits(&mut rng, 1.2, 0.3));
+            lib.add("Shaker take 2", Voice::Hat, hits(&mut rng, 0.8, 0.1));
+            let lp = lib.add("Pot and pan loop", Voice::Clap, hits(&mut rng, 2.0, 0.25));
+            let src = lib.source(lib.get(lp).unwrap()).unwrap().clone();
+            let e = lib.get_mut(lp).unwrap();
+            e.slices = crate::library::transients(&src.data, 0.0, 0.0, 0.5);
+            e.edit.low_cut = 180.0;
+            app.sample_slots[0] = k;
+            app.sample_slots[1] = lp;
+            app.lib_ui.show_for(None);
+            app.lib_ui.select(lp);
+        });
+        render("sounds_empty", 1100.0, 700.0, |app| app.lib_ui.show_for(None));
         // Solari says hello as the computer comes on (render time is ~10 s)
         render("home", 1360.0, 860.0, |app| {
             app.home = true;
@@ -245,6 +280,7 @@ mod tests {
                 slots: [None; 12],
                 names: std::array::from_fn(|_| String::new()),
                 project: Some("/Users/me/Music/friday-set.solarum".into()),
+                samples: [0; crate::sampler::SAMPLE_SLOTS],
             });
             let mut rng = crate::rng::Rng::new(4);
             for (i, (name, when, vibe)) in [

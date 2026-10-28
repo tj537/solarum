@@ -8,6 +8,7 @@
 use crate::form::{pattern_slot, Part, FORMS};
 use crate::gen::{self, Change};
 use crate::rng::Rng;
+use crate::sampler::{slot_of, Audition, SampleBuf, Sampler, Slots};
 use crate::song::{Song, Vibe, Voice, STEPS, TRACKS};
 use crate::synth::*;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU64, Ordering};
@@ -47,6 +48,10 @@ pub enum Cmd {
     Capture(bool),
     /// A click on every beat, higher on the one – for building a beat by hand
     Metronome(bool),
+    /// Your own sounds in the project's slots (`sampler::CUSTOM` + slot in `Track::sound`)
+    Samples(Box<Slots>),
+    /// The library plays a sound (looped or once), `None` stops it
+    Audition(Option<Arc<SampleBuf>>, bool),
     /// The auto mode builds on what's there: the empty tracks of this groove come in one per
     /// bar (kick first), then it goes on as usual
     Grow(Box<Song>),
@@ -186,6 +191,8 @@ pub struct Shared {
     /// Set by the UI: while SOLAR OS plays, the energy may add ghost hats and thin out the
     /// percussion. By hand (auto off, no song) the pattern always plays exactly as written.
     pub touches: AtomicBool,
+    /// Where the library's audition is in its sound (`SAMPLE_SR` samples), `u64::MAX` when silent
+    pub audition: AtomicU64,
 }
 
 /// `Shared::cycle_break` of a cycle without a breakdown
@@ -210,6 +217,7 @@ impl Shared {
             cycle_break: AtomicU32::new(NO_BREAK),
             touches: AtomicBool::new(true),
             heat: AtomicU32::new(500),
+            audition: AtomicU64::new(u64::MAX),
         })
     }
 
@@ -476,6 +484,9 @@ pub struct Engine {
     hat: Hat,
     open_hat: Hat,
     ride: Hat,
+    samples: Slots,
+    samplers: [Sampler; TRACKS],
+    audition: Audition,
     bass: Bass,
     acid: Acid,
     boom: Boom,
@@ -611,6 +622,9 @@ impl Engine {
             hat: Hat::new(sr, &HATS[0]),
             open_hat: Hat::new(sr, &OPEN_HATS[0]),
             ride: Hat::new(sr, &RIDES[0]),
+            samples: Default::default(),
+            samplers: Default::default(),
+            audition: Audition::default(),
             bass: Bass::new(sr),
             acid: Acid::new(sr),
             boom: Boom::default(),
@@ -829,6 +843,19 @@ impl Engine {
                 }
             }
             Cmd::Metronome(on) => self.metronome = on,
+            Cmd::Samples(slots) => self.samples = *slots,
+            Cmd::Audition(buf, looped) => {
+                self.audition.looped = None;
+                match buf {
+                    Some(b) => {
+                        self.audition.voice.trigger(&b, 0.0, 1.0, None, self.sr);
+                        if looped {
+                            self.audition.looped = Some(b);
+                        }
+                    }
+                    None => self.audition.voice = Sampler::default(),
+                }
+            }
             Cmd::Grow(target) => {
                 self.grow = Some(target);
                 // A fresh cycle once it's grown, and enough energy for everything to play
@@ -1656,6 +1683,29 @@ impl Engine {
         };
         let pitch = (self.song.root as i32 + note as i32 + self.transpose as i32 + track.tune as i32) as f32;
         let sound = track.sound;
+        if let Some(k) = slot_of(sound) {
+            // One of your own sounds: drums play out (decay shortens them), bass and synth follow the notes
+            if let Some(buf) = self.samples[k].clone() {
+                let semis = track.tune as f32
+                    + if voice.is_synth() {
+                        pitch - self.song.root as f32 - track.tune as f32
+                    } else {
+                        0.0
+                    };
+                let len = buf.data.len() as f32 * sr / crate::sampler::SAMPLE_SR;
+                let hold = if voice.is_synth() {
+                    Some(gate * decay.min(1.5))
+                } else {
+                    (decay < 1.0).then_some(len * decay)
+                };
+                self.samplers[voice.index()].trigger(&buf, semis, vel, hold, sr);
+                if voice == Voice::Kick {
+                    self.pump_env = 1.0;
+                }
+            }
+            self.count_hit(voice);
+            return;
+        }
         let pick = |n: usize| sound as usize % n;
         match voice {
             Voice::Kick => {
@@ -1770,7 +1820,7 @@ impl Engine {
             }
 
             // ── Voices ──
-            let kick_raw = self.kick.next(sr, &mut self.rng);
+            let kick_raw = self.kick.next(sr, &mut self.rng) + self.samplers[0].next();
             let duck = self.kick.envelope();
             self.pump_env *= pump_coef;
             // Everything but the kick breathes with it
@@ -1785,6 +1835,10 @@ impl Engine {
                 self.bass.next(sr, self.energy_smooth, dark) * vol[6] * 2.0 * (1.0 - duck * 0.7) * pg,
                 self.acid.next(sr, acid) * vol[7] * (1.0 - duck * 0.3) * pg,
             ];
+            let mut v = v;
+            for (i, x) in v.iter_mut().enumerate().skip(1) {
+                *x += self.samplers[i].next() * vol[i] * pg;
+            }
             let (mut l, mut r) = (0.0f32, 0.0f32);
             let (mut dl, mut dr, mut rv) = (0.0f32, 0.0f32, 0.0f32);
             let echo_send = self.echo_amount;
@@ -1995,6 +2049,10 @@ impl Engine {
                 self.taping = false;
             }
 
+            // The library's audition, after every effect
+            let a = self.audition.next(sr) * 0.9;
+            l += a;
+            r += a;
             self.peak = self.peak.max(l.abs().max(r.abs()));
             frame[0] = l;
             frame[1] = r;
@@ -2015,6 +2073,8 @@ impl Engine {
         let shown = f32::from_bits(self.shared.level.load(Ordering::Relaxed));
         let fallen = (shown * 0.85).max(self.peak);
         self.shared.level.store(fallen.to_bits(), Ordering::Relaxed);
+        let pos = self.audition.voice.position().map_or(u64::MAX, |p| p as u64);
+        self.shared.audition.store(pos, Ordering::Relaxed);
         self.peak = 0.0;
         self.shared.playing.store(self.playing, Ordering::Relaxed);
         self.shared.filter_now.store(self.filter.to_bits(), Ordering::Relaxed);
@@ -2087,6 +2147,42 @@ mod tests {
             let n = ALLOCS.with(|c| c.replace(None)).unwrap();
             assert_eq!(n, 0, "{vibe:?}: {n} allocations on the audio thread");
         }
+    }
+
+    #[test]
+    fn your_own_sounds_play_on_their_track_without_allocating() {
+        use crate::sampler::{SampleBuf, CUSTOM};
+        let mut song = gen::generate(Vibe::Peak, &Default::default(), &mut Rng::new(2));
+        for t in song.tracks.iter_mut() {
+            t.mute = true;
+        }
+        let clap = song.track_mut(Voice::Clap);
+        clap.mute = false;
+        clap.sound = CUSTOM + 3;
+        let buf = Arc::new(SampleBuf {
+            data: (0..4000).map(|i| (i as f32 * 0.07).sin() * 0.8).collect(),
+            pitch: 0.0,
+        });
+        let mut slots: crate::sampler::Slots = Default::default();
+        slots[3] = Some(buf.clone());
+        let mut e = Engine::new(44_100.0, song, Shared::new(), None, 5);
+        e.handle(Cmd::Samples(Box::new(slots)));
+        e.handle(Cmd::Play);
+        let mut out = vec![0.0; 1024];
+        let mut peak = 0.0f32;
+        ALLOCS.with(|c| c.set(Some(0)));
+        for _ in 0..200 {
+            e.render(&mut out);
+            peak = out.iter().fold(peak, |m, x| m.max(x.abs()));
+        }
+        let n = ALLOCS.with(|c| c.replace(None)).unwrap();
+        assert_eq!(n, 0, "{n} allocations on the audio thread");
+        assert!(peak > 0.1 && peak <= 1.0, "{peak}");
+        // The audition plays while stopped, and says where it is
+        e.handle(Cmd::Stop);
+        e.handle(Cmd::Audition(Some(buf), false));
+        e.render(&mut out);
+        assert!(e.shared.audition.load(Ordering::Relaxed) < 4000);
     }
 
     #[test]

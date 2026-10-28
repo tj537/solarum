@@ -10,6 +10,8 @@ mod file;
 mod form;
 mod gen;
 mod home;
+mod library;
+mod library_ui;
 mod log;
 mod midi;
 #[cfg(test)]
@@ -23,6 +25,7 @@ mod reel {
     include!("../marketing/reel.rs");
 }
 mod rng;
+mod sampler;
 #[cfg(test)]
 mod snapshot;
 mod song;

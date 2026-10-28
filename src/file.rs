@@ -17,6 +17,9 @@ pub struct SolarumFile {
     /// The favorites 1–12 (the name "scenes" stays so older files open)
     pub scenes: Vec<Option<Song>>,
     pub names: Vec<String>,
+    /// Your own sounds in the eight slots (library ids, 0 = empty) and their audio
+    pub sample_slots: Vec<u64>,
+    pub samples: crate::library::Packed,
 }
 
 impl Default for SolarumFile {
@@ -26,6 +29,8 @@ impl Default for SolarumFile {
             song: Song::default(),
             scenes: vec![None; SLOTS],
             names: vec![String::new(); SLOTS],
+            sample_slots: Vec::new(),
+            samples: Default::default(),
         }
     }
 }

@@ -525,7 +525,7 @@ impl Song {
     pub fn sanitize(&mut self) {
         for (t, v) in self.tracks.iter_mut().zip(Voice::ALL) {
             t.expand();
-            if t.sound as usize >= v.sounds().len() {
+            if t.sound as usize >= v.sounds().len() && crate::sampler::slot_of(t.sound).is_none() {
                 t.sound = 0;
             }
             t.volume = if t.volume.is_finite() { t.volume.clamp(0.0, 1.0) } else { 0.8 };
