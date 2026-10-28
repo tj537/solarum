@@ -91,7 +91,7 @@ pub fn character(ui: &mut Ui, dark: &mut f32, acid: &mut f32, def: [f32; 2], sho
     resp.on_hover_cursor(egui::CursorIcon::Crosshair)
 }
 
-/// The master EQ as a curve: three points (low, mid, high) to drag up or down, ±12 dB;
+/// The master EQ as a curve: three points (low, mid, high) to drag up or down, ±`song::EQ_DB`;
 /// double-click a point to flatten it
 pub fn eq_curve(ui: &mut Ui, bands: &mut [f32; 3], colors: [Color32; 3], width: f32, height: f32) -> Response {
     let (all, mut resp) = ui.allocate_exact_size(vec2(width, height + 18.0), Sense::click_and_drag());
@@ -151,7 +151,7 @@ pub fn eq_curve(ui: &mut Ui, bands: &mut [f32; 3], colors: [Color32; 3], width: 
             glow(&p, at, 7.0, colors[k], 0.5);
         }
         p.circle_filled(at, 7.0, colors[k]);
-        let db = (bands[k] - 0.5) * 24.0;
+        let db = (bands[k] - 0.5) * 2.0 * crate::song::EQ_DB;
         p.text(
             pos2(xs[k], all.bottom()),
             Align2::CENTER_BOTTOM,

@@ -413,6 +413,9 @@ pub const MOODS: [(&str, &str, Scale, u8); 10] = [
 /// The mood Solarum starts in (and a clear goes back to): plain, no chord changes
 pub const NEUTRAL: usize = 9;
 
+/// How far each band of the master EQ goes up or down (dB)
+pub const EQ_DB: f32 = 5.0;
+
 /// The master section: three-band EQ and drive, each 0…1 (0.5 = flat)
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 #[serde(default)]

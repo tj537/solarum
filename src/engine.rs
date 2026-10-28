@@ -1789,9 +1789,9 @@ impl Engine {
         // Pump: the duck lasts a bit more than a 16th
         let pump_coef = (-1.0 / (step_len as f32 * 1.3)).exp();
         let pump = m.pump;
-        // Master EQ: ±12 dB per band
+        // Master EQ: ±EQ_DB per band (more only made it clip)
         let eq = self.song.eq;
-        let db = |v: f32| 10f32.powf((v - 0.5) * 24.0 / 20.0) - 1.0;
+        let db = |v: f32| 10f32.powf((v - 0.5) * 2.0 * crate::song::EQ_DB / 20.0) - 1.0;
         let (g_low, g_mid, g_high) = (db(eq.low), db(eq.mid), db(eq.high));
         let eq_on = g_low.abs() + g_mid.abs() + g_high.abs() > 0.01;
         let band_coef = (-1.0 / (0.03 * sr)).exp();

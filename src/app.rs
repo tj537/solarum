@@ -266,6 +266,8 @@ pub struct SolarumApp {
     /// What the engine has in its slots, and buffers it may still hold (dropped once it let go)
     samples_sent: Slots,
     retired: Vec<Arc<SampleBuf>>,
+    /// When Solari drops its next line while it plays (0: not planned yet)
+    solari_drop_at: f64,
 }
 
 impl SolarumApp {
@@ -465,6 +467,7 @@ impl SolarumApp {
             saved_samples: [0; SAMPLE_SLOTS],
             samples_sent: Default::default(),
             retired: Vec::new(),
+            solari_drop_at: 0.0,
         }
     }
 
@@ -1850,7 +1853,7 @@ impl SolarumApp {
         }
         if let Some(v) = picked {
             self.shuffle(v, now);
-            self.bunk(format!("{} it is. {}", v.name(), v.blurb()), now);
+            self.bunk(format!("{} it is, bro. {}", v.name(), v.blurb()), now);
         }
     }
 
@@ -1878,16 +1881,16 @@ impl SolarumApp {
         };
         match first {
             "help" | "?" | "commands" => self.bunk(
-                "I know: shuffle · seed tom · vibe acid · vibes · drop · fx on/off · every 8 · mood dark · bpm 135 · status · joke · off",
+                "Here's what I know, bro: shuffle · seed tom · vibe acid · vibes · drop · fx on/off · every 8 · mood dark · bpm 135 · status · joke · off",
                 now,
             ),
             "shuffle" | "roll" | "again" | "next" | "new" => {
                 self.shuffle(self.song.vibe, now);
                 const QUIPS: [&str; 4] = [
-                    "Rolled. Smells like fresh techno.",
-                    "New groove. Same orbit.",
-                    "Shook the dice. They landed on four to the floor.",
-                    "There. Tell me if it slaps.",
+                    "Rolled it, bro. Smells like fresh techno.",
+                    "New groove, same orbit. Let's get it.",
+                    "Shook the dice, brother. Four to the floor, no cap.",
+                    "There you go, fam. Tell me if it slaps.",
                 ];
                 self.bunk(QUIPS[pick(1, QUIPS.len())], now);
             }
@@ -1902,7 +1905,7 @@ impl SolarumApp {
                 self.seeded(&word, now);
                 self.bunk(
                     format!(
-                        "Seed \"{word}\" in {}. Same seed, same vibe – same beat, any time.",
+                        "Seed \"{word}\" in {}. Same seed, same vibe – same beat, any time, bro.",
                         self.song.vibe.name()
                     ),
                     now,
@@ -1915,16 +1918,16 @@ impl SolarumApp {
             "vibe" | "play" | "style" => match find_vibe(&arg) {
                 Some(v) => {
                     self.shuffle(v, now);
-                    self.bunk(format!("{} it is. {}", v.name(), v.blurb()), now);
+                    self.bunk(format!("{} it is, bro. {}", v.name(), v.blurb()), now);
                 }
-                None => self.bunk("Which one? Type vibes for the list.", now),
+                None => self.bunk("Which one, bro? Type vibes for the list.", now),
             },
             "drop" | "boom" => {
                 if self.playing() {
                     self.drop_now(now);
-                    self.bunk("Hold on to something.", now);
+                    self.bunk("Hold on to something, brother. Here it comes.", now);
                 } else {
-                    self.bunk("Press play first – I can't drop silence.", now);
+                    self.bunk("Press play first, fam – I can't drop silence.", now);
                 }
             }
             "fx" => {
@@ -1940,14 +1943,14 @@ impl SolarumApp {
                     self.song.auto_bars = n;
                     self.bunk(
                         if n == 1 {
-                            "Something new every bar. Busy night.".to_string()
+                            "Something new every bar. Busy night, bro.".to_string()
                         } else {
-                            format!("Something new every {n} bars.")
+                            format!("Say less. Something new every {n} bars.")
                         },
                         now,
                     );
                 }
-                _ => self.bunk("Every how many bars? 1 to 16.", now),
+                _ => self.bunk("Every how many bars, bro? 1 to 16.", now),
             },
             "mood" => match MOODS.iter().position(|m| !arg.is_empty() && m.0.to_lowercase().starts_with(&arg)) {
                 Some(k) => {
@@ -1958,7 +1961,7 @@ impl SolarumApp {
                 }
                 None if arg == "auto" => {
                     self.song.mood_hold = false;
-                    self.bunk("I'll pick the mood with every shuffle.", now);
+                    self.bunk("Bet. I'll pick the mood with every shuffle.", now);
                 }
                 None => {
                     let names: Vec<&str> = MOODS.iter().map(|m| m.0).collect();
@@ -1970,7 +1973,7 @@ impl SolarumApp {
                     self.song.bpm = b.clamp(90.0, 180.0);
                     self.bunk(format!("{:.0} BPM.", self.song.bpm), now);
                 }
-                Err(_) => self.bunk(format!("We're at {:.0} BPM. Say bpm 135 to change it.", self.song.bpm), now),
+                Err(_) => self.bunk(format!("We're at {:.0} BPM, bro. Say bpm 135 to change it.", self.song.bpm), now),
             },
             "status" | "where" => {
                 let mood = self.song.mood().map_or("", |k| MOODS[k].0);
@@ -1985,25 +1988,25 @@ impl SolarumApp {
             }
             "joke" => {
                 const JOKES: [&str; 4] = [
-                    "Why did the kick quit? It kept getting beat.",
+                    "Why did the kick quit, bro? It kept getting beat.",
                     "How many techno heads to change a bulb? One. And again. And again. And again.",
-                    "I asked the hi-hat to stop. It said: tss.",
-                    "My favourite chord? Same as yesterday. It's techno.",
+                    "Asked the hi-hat to chill. It said: tss. Disrespectful.",
+                    "My favourite chord? Same as yesterday, brother. It's techno.",
                 ];
                 self.bunk(JOKES[pick(2, JOKES.len())], now);
             }
-            "hi" | "hello" | "hey" | "solari" | "bunk" | "who" => self.bunk("Hi! I'm Solari. I run the set down here – type help.", now),
+            "hi" | "hello" | "hey" | "solari" | "bunk" | "who" => self.bunk("Yo bro! I'm Solari, I run the set down here. Type help if you're lost.", now),
             "off" | "exit" | "bye" | "quit" | "shutdown" => {
-                self.bunk("Bye. Lights out.", now);
+                self.bunk("Peace out, brother. Lights out.", now);
                 self.power(now);
             }
             _ => match find_vibe(first) {
                 // A vibe's name alone works too
                 Some(v) => {
                     self.shuffle(v, now);
-                    self.bunk(format!("{} it is. {}", v.name(), v.blurb()), now);
+                    self.bunk(format!("{} it is, bro. {}", v.name(), v.blurb()), now);
                 }
-                None => self.bunk("Didn't get that. I only speak techno – try help.", now),
+                None => self.bunk("Didn't catch that, bro. I only speak techno – try help.", now),
             },
         }
     }
@@ -2070,16 +2073,16 @@ impl SolarumApp {
         }
         let target = gen::grow_target(&self.song, &mut self.rng);
         if target.tracks == self.song.tracks {
-            self.bunk("Nice beat. I'll keep it moving.", now);
+            self.bunk("This beat is lowkey fire, bro. I'll keep it moving.", now);
             return;
         }
         self.send(Cmd::Grow(Box::new(target)));
         let vibe = self.song.vibe.name().to_lowercase();
         self.bunk(
             if empty {
-                format!("Empty sky. I'll build something {vibe}, one track per bar.")
+                format!("Empty sky, fam. I'll cook something {vibe}, one track per bar.")
             } else {
-                "I'll keep your beat and fill in the rest, one track per bar.".to_string()
+                "Your beat stays, brother. I'll fill in the rest, one track per bar.".to_string()
             },
             now,
         );
@@ -3086,7 +3089,7 @@ impl SolarumApp {
             let mut bands = [e.low, e.mid, e.high];
             let colors = [track_color(Voice::Bass), track_color(Voice::Rim), track_color(Voice::Hat)];
             controls::eq_curve(ui, &mut bands, colors, w, eq_h).on_hover_text(
-                "Master EQ: drag a point up or down (±12 dB) – low below ~110 Hz, mid around 1 kHz, high above ~7 kHz. Double-click: flat",
+                "Master EQ: drag a point up or down (±5 dB) – low below ~110 Hz, mid around 1 kHz, high above ~7 kHz. Double-click: flat",
             );
             [e.low, e.mid, e.high] = bands;
         }
@@ -3794,6 +3797,18 @@ impl SolarumApp {
         let live = self.sync(ctx, now, dt);
         if !self.home && !self.lib_ui.open {
             self.keys(ctx, now);
+        }
+        // While Solari plays, it drops a line now and then (every one to two and a half minutes)
+        if self.song.auto && self.playing() {
+            if self.solari_drop_at == 0.0 {
+                self.solari_drop_at = now + 45.0 + self.rng.f32() as f64 * 45.0;
+            } else if now >= self.solari_drop_at {
+                let line = *self.rng.pick(&crate::log::DROPS);
+                self.bunk(line, now);
+                self.solari_drop_at = now + 60.0 + self.rng.f32() as f64 * 90.0;
+            }
+        } else {
+            self.solari_drop_at = 0.0;
         }
         let state = self.log_state();
         self.log.tick(state, now, &self.song);

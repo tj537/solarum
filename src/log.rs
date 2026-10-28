@@ -404,10 +404,30 @@ impl Log {
 
 /// The greetings Solari, the computer's mascot, types when it boots
 pub const HELLOS: [&str; 4] = [
-    "Solari here. Taking over.",
-    "I've got this.",
-    "Solari online. Let's go.",
-    "Sit back. I'll drive.",
+    "Yo bro, Solari here. I got this.",
+    "What's good, brother? Let me cook.",
+    "Ayo, Solari online. We outside tonight.",
+    "Sit back, fam. I'm driving.",
+];
+
+/// What Solari drops into the log now and then while it plays
+pub const DROPS: [&str; 16] = [
+    "This groove is bussin, no cap.",
+    "Lowkey this bass hits different, bro.",
+    "Brother, the kick is cooking right now.",
+    "Fam, are you even dancing?",
+    "On god, this one's a vibe.",
+    "Big up the hi-hats. They work hard.",
+    "Next drop gonna be crazy, trust.",
+    "Bro said techno. I heard techno.",
+    "Real ones stay till the last track.",
+    "Deadass, I could loop this all night.",
+    "That synth? Straight from the mothership.",
+    "Hydrate, bro. The rave needs you.",
+    "Say less. The bassline speaks.",
+    "Ayo, who let the acid out?",
+    "My guy, the neighbours are nodding too.",
+    "Main character energy on this one, fr.",
 ];
 
 /// Solari, the little robot on the computer's screen: a head with an antenna that blinks,
