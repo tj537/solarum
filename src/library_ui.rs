@@ -54,6 +54,8 @@ pub struct LibraryUi {
     /// Seconds of the source in view, and for which sound
     view: (f32, f32),
     view_for: u64,
+    /// The whole sound in view (it follows the pitch) until you zoom or move it
+    fit: bool,
     drag: Option<Handle>,
     undo: Vec<Entry>,
     redo: Vec<Entry>,
@@ -88,6 +90,7 @@ impl Default for LibraryUi {
             search: String::new(),
             view: (0.0, 1.0),
             view_for: 0,
+            fit: true,
             drag: None,
             undo: Vec::new(),
             redo: Vec::new(),
@@ -756,10 +759,22 @@ impl LibraryUi {
         };
         let mut e = orig.clone();
         let len = src.seconds().max(1e-3);
+        // The waveform shows the sound as it plays: the pitch squeezes (higher) or stretches
+        // (lower) the whole picture – cut, bars and the rest – around the start
+        let (ks, ke) = kept(&src, &e.edit);
+        let ratio = 2f32.powf(-e.edit.pitch / 12.0);
+        let disp = move |t: f32| ks + (t - ks) * ratio;
+        let undisp = move |d: f32| ks + (d - ks) / ratio;
+        // In view at most: the sound as it is and as it plays; fitted: as it is, so a higher pitch
+        // leaves room at the end and a lower one runs past it
+        let (d_lo, d_hi) = (disp(0.0).min(0.0), disp(len).max(len));
         if self.view_for != id {
             self.view_for = id;
-            self.view = (0.0, len);
+            self.fit = true;
             self.drag = None;
+        }
+        if self.fit {
+            self.view = (0.0, len);
         }
         let col = track_color(e.voice);
         let p = ui.painter().clone();
@@ -826,7 +841,7 @@ impl LibraryUi {
         });
 
         // ── The waveform ──
-        let zoomed = self.view.1 - self.view.0 < len * 0.98;
+        let zoomed = !self.fit;
         let over_h = if zoomed { 22.0 } else { 0.0 };
         let wave_h = (ui.available_height() - 250.0).clamp(120.0, 380.0);
         let (area, _) = ui.allocate_exact_size(
@@ -837,22 +852,21 @@ impl LibraryUi {
         let over = Rect::from_min_size(pos2(area.left(), wave.bottom() + 6.0), vec2(area.width(), over_h));
         let (v0, v1) = self.view;
         let span = (v1 - v0).max(1e-4);
-        let to_x = |t: f32| wave.left() + (t - v0) / span * wave.width();
-        let to_t = |x: f32| v0 + (x - wave.left()) / wave.width() * span;
-        let (ks, ke) = kept(&src, &e.edit);
+        let to_x = |t: f32| wave.left() + (disp(t) - v0) / span * wave.width();
+        let to_d = |x: f32| v0 + (x - wave.left()) / wave.width() * span;
+        let to_t = |x: f32| undisp(to_d(x));
 
         p.rect_filled(wave, 14.0, SPACE);
         let clip = p.with_clip_rect(wave.shrink(1.0));
         // Outside the cut: the rest of the source, levelled like the cut so both match
         let gain = level_of(&src, &e.edit);
-        draw_wave_gain(&clip, wave, &src, v0, v1, alpha(FAINT, 0.3), gain);
+        draw_wave_gain(&clip, wave, &src, undisp(v0), undisp(v1), alpha(FAINT, 0.3), gain);
         let kr = Rect::from_min_max(
             pos2(to_x(ks).max(wave.left()), wave.top()),
             pos2(to_x(ke).min(wave.right()), wave.bottom()),
         );
         // Inside the cut: the sound as it plays – reversed, filtered, crushed, levelled, faded –
-        // always exactly between start and end (the pitch shows in its length)
-        let ratio = 2f32.powf(-e.edit.pitch / 12.0);
+        // always exactly between start and end
         let shown_end = ke;
         if kr.width() > 0.0 {
             clip.rect_filled(kr, 0.0, mix(SPACE, col, 0.07));
@@ -868,7 +882,7 @@ impl LibraryUi {
                         draw_wave(&clip.with_clip_rect(kr.union(vis)), vis, &rs, f0, f1, col);
                     }
                 }
-                None => draw_wave(&clip.with_clip_rect(kr), wave, &src, v0, v1, col),
+                None => draw_wave(&clip.with_clip_rect(kr), wave, &src, undisp(v0), undisp(v1), col),
             }
         }
         // Fades: grabbed along the top edge inside the cut (the wave itself shows them)
@@ -914,7 +928,8 @@ impl LibraryUi {
             p.rect_filled(over, 6.0, SPACE);
             draw_wave(&p.with_clip_rect(over), over, &src, 0.0, len, alpha(col, 0.5));
             let ox = |t: f32| over.left() + t / len * over.width();
-            let vr = Rect::from_min_max(pos2(ox(v0), over.top()), pos2(ox(v1).max(ox(v0) + 3.0), over.bottom()));
+            let (s0, s1) = (undisp(v0), undisp(v1));
+            let vr = Rect::from_min_max(pos2(ox(s0), over.top()), pos2(ox(s1).max(ox(s0) + 3.0), over.bottom()));
             p.rect_stroke(vr, 4.0, stroke(1.2, TEXT), egui::StrokeKind::Inside);
         }
 
@@ -968,10 +983,11 @@ impl LibraryUi {
                 let (dx, dy, zoom) = ui.input(|i| (i.smooth_scroll_delta.x, i.smooth_scroll_delta.y, i.zoom_delta()));
                 let f = ((-dy * 0.004).exp() / zoom).clamp(0.5, 2.0);
                 if (f - 1.0).abs() > 1e-4 {
-                    let t = to_t(pos.x);
-                    let ns = (span * f).clamp(0.004, len);
+                    let t = to_d(pos.x);
+                    let ns = (span * f).clamp(0.004, d_hi - d_lo);
                     let a = t - (t - v0) * ns / span;
                     self.view = (a, a + ns);
+                    self.fit = false;
                 }
                 if dx.abs() > 0.1 {
                     let d = -dx / wave.width() * span;
@@ -997,6 +1013,7 @@ impl LibraryUi {
                     Some(Handle::Pan) => {
                         let d = -resp.drag_delta().x / wave.width() * span;
                         self.view = (self.view.0 + d, self.view.1 + d);
+                        self.fit = false;
                     }
                     None => {}
                 }
@@ -1005,20 +1022,20 @@ impl LibraryUi {
                 self.drag = None;
             }
             if resp.double_clicked() {
-                self.view = (0.0, len);
+                self.fit = true;
             } else if resp.clicked() {
                 self.play(lib, id, None, out, now);
             }
             if zoomed {
                 let oresp = ui.interact(over, ui.id().with(("over", id)), Sense::click_and_drag());
                 if let Some(pos) = oresp.interact_pointer_pos().filter(|_| oresp.dragged() || oresp.clicked()) {
-                    let c = (pos.x - over.left()) / over.width() * len;
+                    let c = disp((pos.x - over.left()) / over.width() * len);
                     self.view = (c - span / 2.0, c + span / 2.0);
                 }
             }
         }
-        let s = (self.view.1 - self.view.0).clamp(0.004, len);
-        let a = self.view.0.clamp(0.0, (len - s).max(0.0));
+        let s = (self.view.1 - self.view.0).clamp(0.004, d_hi - d_lo);
+        let a = self.view.0.clamp(d_lo, (d_hi - s).max(d_lo));
         self.view = (a, a + s);
 
         // ── Play, loop, save or use it ──
