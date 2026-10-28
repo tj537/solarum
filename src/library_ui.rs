@@ -179,7 +179,6 @@ enum Tile {
     /// Soft, bright or air – what a drawn line sounds like
     Wave(u8),
     Length,
-    Dice,
 }
 
 /// A line through `f(x)` for x in 0…1, inside `r` (y: -1 … 1)
@@ -248,17 +247,10 @@ fn picture(p: &egui::Painter, r: Rect, tile: Tile, v: f32, col: Color32, t: f32)
         // A line as long as the sound
         Tile::Length => {
             let y = r.center().y;
-            let x1 = r.left() + r.width() * (0.08 + v * 0.92);
+            let x1 = r.left() + r.width() * v;
             p.line_segment([pos2(r.left(), y), pos2(r.right(), y)], faint);
             p.line_segment([pos2(r.left(), y), pos2(x1, y)], stroke(3.0, col));
             p.circle_filled(pos2(x1, y), 5.0, col);
-        }
-        // A random laser falling through some stars
-        Tile::Dice => {
-            curve(p, r, s, |x| 0.8 - x.powf(0.4) * 1.5 + (x * TAU * 4.0).sin() * 0.08);
-            for (fx, fy) in [(0.2, 0.7), (0.55, 0.85), (0.8, 0.3), (0.35, 0.15)] {
-                p.circle_filled(pos2(r.left() + r.width() * fx, r.top() + r.height() * fy), 1.6, alpha(col, 0.7));
-            }
         }
         Tile::Chop => {
             let n = v.round().max(1.0) as usize;
@@ -1361,7 +1353,7 @@ impl LibraryUi {
         let mut ui = ui.new_child(UiBuilder::new().max_rect(inner).layout(egui::Layout::top_down(egui::Align::Min)));
         ui.spacing_mut().item_spacing = vec2(8.0, 10.0);
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("DRAW A SOUND").font(display(24.0)).color(TEXT));
+            ui.label(egui::RichText::new(self.draw_name).font(bold(22.0)).color(TEXT));
             ui.add_space(8.0);
             ui.label(
                 egui::RichText::new("Paint a line – higher is higher, gaps are silence · right mouse button erases")
@@ -1444,40 +1436,9 @@ impl LibraryUi {
             resp.on_hover_cursor(egui::CursorIcon::Crosshair);
         }
 
-        // How it sounds, how long, a surprise; then hear it and keep it
-        let gap = 10.0;
-        let size = vec2(((inner.width() - gap * 5.0) / 6.0).max(80.0), 96.0);
+        // Play, loop, clear; cancel or keep it – the same row as in the editor
         let mut play = stroke_done;
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = gap;
-            for (w, name) in [(0u8, "SOFT"), (1, "BRIGHT"), (2, "AIR")] {
-                if action_button(ui, size, Tile::Wave(w), ph::WAVE_SINE, name, d.wave == w, 0.0, col).clicked() {
-                    d.wave = w;
-                    play = true;
-                }
-            }
-            let mut v = ((d.length - 0.1) / 3.9).clamp(0.0, 1.0);
-            let r = value_card(ui, size, Tile::Length, "LENGTH", &fmt_secs(d.length), &mut v, 0.23, |v| v, col)
-                .on_hover_text("Drag up: longer · down: shorter");
-            if r.changed() {
-                d.length = 0.1 + v * 3.9;
-            }
-            if r.drag_stopped() || r.double_clicked() {
-                play = true;
-            }
-            if action_button(ui, size, Tile::Dice, ph::SPARKLE, "SURPRISE", false, 0.0, col)
-                .on_hover_text("A random space sound – then draw on it")
-                .clicked()
-            {
-                let (nd, name) = library::surprise(&mut self.rng);
-                d = nd;
-                self.draw_name = name;
-                play = true;
-            }
-            if action_button(ui, size, Tile::Wave(0), ph::ERASER, "CLEAR", false, 0.0, RED).clicked() {
-                d.pitch = vec![None; n];
-            }
-        });
+        let mut replay = false;
         ui.horizontal(|ui| {
             let playing = self.playing.as_ref().is_some_and(|pl| pl.id == 0);
             let (pr, presp) = ui.allocate_exact_size(vec2(46.0, 46.0), Sense::click());
@@ -1503,6 +1464,20 @@ impl LibraryUi {
                 } else {
                     play = true;
                 }
+            }
+            if chip(ui, &format!("{}  Loop", ph::REPEAT), self.looped, col)
+                .on_hover_text("Over and over – you hear every stroke at once")
+                .clicked()
+            {
+                self.looped = !self.looped;
+                replay = playing;
+            }
+            if chip(ui, &format!("{}  Clear", ph::BROOM), false, TEXT)
+                .on_hover_text("Start again on an empty board")
+                .clicked()
+            {
+                d.pitch = vec![None; n];
+                self.stop(out);
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let drawn = d.pitch.iter().any(Option::is_some);
@@ -1540,6 +1515,41 @@ impl LibraryUi {
                 }
             });
         });
+
+        // How it sounds and how long: the editor's tile size
+        ui.add_space(2.0);
+        let gap = 10.0;
+        let tw = ((inner.width() - gap * 4.0) / 5.0).max(80.0);
+        let th = ui.available_height().clamp(76.0, 104.0);
+        let size = vec2(tw, th);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            for (w, name) in [(0u8, "SOFT"), (1, "BRIGHT"), (2, "AIR")] {
+                if action_button(ui, size, Tile::Wave(w), ph::WAVE_SINE, name, d.wave == w, 0.0, col).clicked() {
+                    d.wave = w;
+                    play = true;
+                }
+            }
+            // LENGTH as a slider: click or drag along it
+            let (rect, resp) = ui.allocate_exact_size(size, Sense::click_and_drag());
+            let hot = resp.hovered() || resp.dragged();
+            let p = ui.painter_at(rect);
+            let area = crate::controls::card(&p, rect, "LENGTH", &fmt_secs(d.length), col, hot);
+            if let Some(pos) = resp.interact_pointer_pos().filter(|_| resp.dragged() || resp.clicked()) {
+                let v = ((pos.x - area.left()) / area.width()).clamp(0.0, 1.0);
+                d.length = 0.1 + v * 3.9;
+            }
+            picture(&p, area, Tile::Length, ((d.length - 0.1) / 3.9).clamp(0.0, 1.0), col, 0.0);
+            let resp = resp
+                .on_hover_text("Click or drag: shorter to the left, longer to the right")
+                .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+            if resp.drag_stopped() || resp.clicked() {
+                play = true;
+            }
+        });
+        if replay {
+            play = true;
+        }
         if self.drawing.is_none() {
             return;
         }
@@ -1548,7 +1558,7 @@ impl LibraryUi {
                 data: library::render_drawing(&d),
                 pitch: 0.0,
             });
-            out.push(Out::Audition(Some(buf.clone()), false));
+            out.push(Out::Audition(Some(buf.clone()), self.looped));
             self.playing = Some(Playing {
                 id: 0,
                 buf,
