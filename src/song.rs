@@ -67,14 +67,14 @@ impl Voice {
     /// default, so saved songs from before sounds existed play as they did.
     pub fn sounds(self) -> &'static [&'static str] {
         match self {
-            Voice::Kick => &["909", "808", "Hard", "Deep", "Punch"],
-            Voice::Clap => &["Clap", "Snare", "Big clap", "Snap"],
-            Voice::Rim => &["Rim", "Cowbell", "Clave", "Tom", "Blip"],
-            Voice::Hat => &["909", "808", "Shaker", "Tick"],
-            Voice::OpenHat => &["909", "808", "Sizzle"],
-            Voice::Ride => &["Ride", "Bell", "Dark"],
-            Voice::Bass => &["Rolling", "Sub", "Reese", "Pulse", "Donk"],
-            Voice::Acid => &["303 saw", "303 square", "Stab", "Pluck", "Hoover"],
+            Voice::Kick => &["909", "808", "Hard", "Deep", "Punch", "Rumble", "Distort"],
+            Voice::Clap => &["Clap", "Snare", "Big clap", "Snap", "Noise", "Lo-fi"],
+            Voice::Rim => &["Rim", "Cowbell", "Clave", "Tom", "Blip", "Conga", "Zap"],
+            Voice::Hat => &["909", "808", "Shaker", "Tick", "Metal", "Crisp"],
+            Voice::OpenHat => &["909", "808", "Sizzle", "Long", "Metal"],
+            Voice::Ride => &["Ride", "Bell", "Dark", "Crash", "Shimmer"],
+            Voice::Bass => &["Rolling", "Sub", "Reese", "Pulse", "Donk", "FM", "Growl"],
+            Voice::Acid => &["303 saw", "303 square", "Stab", "Pluck", "Hoover", "Pad", "Organ", "Supersaw"],
         }
     }
 
@@ -88,7 +88,7 @@ impl Voice {
             Voice::OpenHat => "Open hi-hat: the off-beat \"tsss\"",
             Voice::Ride => "Ride cymbal: shimmer on top",
             Voice::Bass => "Bassline in the song's key",
-            Voice::Acid => "Synth line: 303 acid, chord stabs, plucks or a rave hoover",
+            Voice::Acid => "Synth line: 303 acid, chord stabs, plucks, a rave hoover, pads, organ or supersaw",
         }
     }
 }

@@ -1577,7 +1577,16 @@ impl Engine {
             }
             let next = track.steps[(si + 1) % track.len.max(1) as usize];
             let legato = voice == Voice::Acid && next.on && next.slide;
-            let gate = if legato { step_len * 1.05 } else { step_len * 0.5 };
+            let gate = if voice == Voice::Acid && gen::synth_family(track.sound) == 4 {
+                // A pad holds its chord until the next one
+                let len = track.len.max(1) as usize;
+                let gap = (1..=len).find(|k| track.steps[(si + k) % len].on).unwrap_or(len);
+                step_len * (gap as f32 - 0.1)
+            } else if legato {
+                step_len * 1.05
+            } else {
+                step_len * 0.5
+            };
             self.trigger(voice, vel, step.accent, step.note + lift, gate as u32, step.slide && step.on);
         }
         // Build-up: a clap roll that gets faster and louder
@@ -3103,8 +3112,15 @@ mod levels {
                     t.mute = j != i;
                 }
                 s.tracks[i].sound = sound as u8;
+                if !s.tracks[i].steps.iter().any(|st| st.on) {
+                    // the groove left this track empty: off-beats, so every sound gets measured
+                    for st in s.tracks[i].steps.iter_mut().skip(2).step_by(4) {
+                        st.on = true;
+                    }
+                }
                 s.macros.space = 0.0;
                 s.macros.dark = 0.0;
+                s.macros.energy = 1.0; // the ride only plays from 70
                 let buf = render_offline(&s, 4, 44_100, 1);
                 let n = buf.len() - 44_100 * 4; // without the tail
                 let rms = (buf[..n].iter().map(|x| x * x).sum::<f32>() / n as f32).sqrt();

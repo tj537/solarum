@@ -170,88 +170,90 @@ fn sounds_for(v: Voice, vibe: Vibe) -> &'static [u8] {
     use Vibe::*;
     let vibe = vibe.rules();
     match v {
-        // 909, 808, Hard, Deep, Punch
+        // 909, 808, Hard, Deep, Punch, Rumble, Distort
         Voice::Kick => match vibe {
-            Dub => &[3, 1, 3],
+            Dub => &[3, 1, 3, 5],
             Minimal => &[4, 0, 3],
             Melodic => &[0, 3, 4],
             Hypnotic | Custom => &[0, 3, 0],
             Electro => &[1],
             Peak | Acid => &[0, 4, 0],
             Rave => &[2, 0],
-            Industrial => &[2, 0, 2],
-            Hard => &[2],
+            Industrial => &[2, 0, 2, 6],
+            Hard => &[2, 6],
         },
-        // Clap, Snare, Big clap, Snap
+        // Clap, Snare, Big clap, Snap, Noise, Lo-fi
         Voice::Clap => match vibe {
-            Dub | Minimal => &[3, 0],
+            Dub | Minimal => &[3, 0, 5],
             Melodic => &[2, 0],
             Hypnotic | Custom => &[0, 3],
             Electro => &[1],
             Peak => &[0, 2],
             Acid => &[0, 1],
             Rave => &[1, 2],
-            Industrial => &[1, 0],
-            Hard => &[0, 1, 2],
+            Industrial => &[1, 0, 4],
+            Hard => &[0, 1, 2, 4],
         },
-        // Rim, Cowbell, Clave, Tom, Blip
+        // Rim, Cowbell, Clave, Tom, Blip, Conga, Zap
         Voice::Rim => match vibe {
             Dub => &[0, 4],
             Minimal => &[0, 2, 4],
-            Melodic => &[2, 0, 3],
+            Melodic => &[2, 0, 3, 5],
             Hypnotic | Custom => &[0, 3],
-            Electro => &[1, 2],
+            Electro => &[1, 2, 6],
             Peak => &[0, 3],
             Acid => &[0, 1],
             Rave => &[1, 0],
-            Industrial | Hard => &[3, 0],
+            Industrial | Hard => &[3, 0, 6],
         },
-        // 909, 808, Shaker, Tick
+        // 909, 808, Shaker, Tick, Metal, Crisp
         Voice::Hat => match vibe {
             Dub => &[2, 1],
-            Minimal => &[3, 0, 2],
+            Minimal => &[3, 0, 2, 5],
             Melodic => &[2, 0],
             Electro => &[1],
-            Hard | Industrial => &[0],
+            Hard | Industrial => &[0, 4],
             _ => &[0, 1, 0],
         },
-        // 909, 808, Sizzle
+        // 909, 808, Sizzle, Long, Metal
         Voice::OpenHat => match vibe {
             Electro => &[1],
             Dub => &[1, 2],
-            Melodic | Minimal => &[0, 2],
+            Melodic | Minimal => &[0, 2, 3],
+            Industrial | Hard => &[0, 4],
             _ => &[0, 0, 1],
         },
-        // Ride, Bell, Dark
+        // Ride, Bell, Dark, Crash, Shimmer
         Voice::Ride => match vibe {
-            Minimal => &[1, 0],
+            Minimal => &[1, 0, 4],
             Dub => &[2],
             Electro => &[1],
+            Melodic => &[0, 4],
             _ => &[0, 2, 0],
         },
-        // Rolling, Sub, Reese, Pulse, Donk
+        // Rolling, Sub, Reese, Pulse, Donk, FM, Growl
         Voice::Bass => match vibe {
             Dub => &[1],
-            Minimal => &[1, 3, 0],
+            Minimal => &[1, 3, 0, 5],
             Melodic => &[1, 2],
             Hypnotic | Custom => &[0, 2, 0],
-            Electro => &[3, 1],
+            Electro => &[3, 1, 5],
             Peak => &[0, 3],
             Acid => &[0, 1],
             Rave => &[2, 4],
-            Industrial => &[0, 2],
-            Hard => &[4, 0],
+            Industrial => &[0, 2, 6],
+            Hard => &[4, 0, 6],
         },
-        // 303 saw, 303 square, Stab, Pluck, Hoover
+        // 303 saw, 303 square, Stab, Pluck, Hoover, Pad, Organ, Supersaw
         Voice::Acid => match vibe {
-            Dub => &[2],
+            Dub => &[2, 5],
             Minimal => &[3, 1, 2],
-            Melodic => &[3, 3, 2],
+            Melodic => &[3, 3, 2, 5, 7],
             Hypnotic | Custom => &[0, 3, 2],
             Electro => &[1, 3],
-            Peak => &[2, 0],
+            Peak => &[2, 0, 7],
             Acid => &[0, 1, 0],
-            Rave => &[4, 2],
+            Rave => &[4, 2, 6],
             Industrial => &[0, 4],
             Hard => &[4, 2],
         },
@@ -533,13 +535,36 @@ fn bass(vibe: Vibe, e: f32, song: &Song, rng: &mut Rng) -> Track {
 }
 
 /// The synth track – the pattern depends on its sound
+/// How a synth sound's line is written: 0 = 303, 1 = stabs (stab, organ), 2 = arp (pluck, supersaw), 3 = hoover, 4 = pad
+pub fn synth_family(sound: u8) -> u8 {
+    match sound {
+        2 | 6 => 1,
+        3 | 7 => 2,
+        4 => 3,
+        5 => 4,
+        _ => 0,
+    }
+}
+
 fn synth_line(vibe: Vibe, e: f32, song: &Song, rng: &mut Rng) -> Track {
-    match song.track(Voice::Acid).sound {
-        2 => stabs(vibe, song, rng),
-        3 => arp(e, song, rng),
-        4 => hoover(song, rng),
+    match synth_family(song.track(Voice::Acid).sound) {
+        1 => stabs(vibe, song, rng),
+        2 => arp(e, song, rng),
+        3 => hoover(song, rng),
+        4 => pads(song, rng),
         _ => acid(vibe, e, song, rng),
     }
+}
+
+/// Pad chords: one per half bar or per bar, held until the next
+fn pads(song: &Song, rng: &mut Rng) -> Track {
+    let pos: &[usize] = rng.pick(&[&[0usize, 8][..], &[0], &[0, 6, 8, 14]]);
+    let mut t = from_positions(pos);
+    let prog = progression(song);
+    for (i, s) in t.steps.iter_mut().enumerate().filter(|(_, s)| s.on) {
+        s.note = song.scale.shift(0, prog[i / 8]);
+    }
+    t
 }
 
 /// Chord stabs on the off-beats, one chord per half bar

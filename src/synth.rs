@@ -122,8 +122,8 @@ pub struct KickModel {
     pub gain: f32,
 }
 
-/// In `Voice::Kick.sounds()` order: 909, 808, Hard, Deep, Punch
-pub const KICKS: [KickModel; 5] = [
+/// In `Voice::Kick.sounds()` order: 909, 808, Hard, Deep, Punch, Rumble, Distort
+pub const KICKS: [KickModel; 7] = [
     KickModel {
         sweep: 2.8,
         sweep_t: 0.026,
@@ -173,6 +173,28 @@ pub const KICKS: [KickModel; 5] = [
         length: 0.62,
         tune: 1.14,
         gain: 1.1,
+    },
+    // Rumble: low, long and a little dirty – made for the rumble delays
+    KickModel {
+        sweep: 1.6,
+        sweep_t: 0.05,
+        click: 0.05,
+        drive: 0.9,
+        drive_add: 1.5,
+        length: 2.2,
+        tune: 0.82,
+        gain: 0.64,
+    },
+    // Distort: a hard sweep into heavy clipping
+    KickModel {
+        sweep: 4.2,
+        sweep_t: 0.02,
+        click: 0.5,
+        drive: 1.6,
+        drive_add: 9.0,
+        length: 1.1,
+        tune: 1.0,
+        gain: 0.56,
     },
 ];
 
@@ -263,6 +285,9 @@ pub struct Clap {
     model: u8,
     body: f32,
     pitch: f32,
+    /// Lo-fi: the held sample and the samples since it was taken
+    hold: f32,
+    held: f32,
 }
 
 impl Clap {
@@ -278,10 +303,12 @@ impl Clap {
             model: 0,
             body: 0.0,
             pitch: 1.0,
+            hold: 0.0,
+            held: 0.0,
         }
     }
 
-    /// `model` in `Voice::Clap.sounds()` order: clap, snare, big clap, snap; `pitch` as a factor
+    /// `model` in `Voice::Clap.sounds()` order: clap, snare, big clap, snap, noise, lo-fi; `pitch` as a factor
     pub fn trigger(&mut self, vel: f32, length: f32, sr: f32, model: u8, pitch: f32) {
         self.t = 0.0;
         self.amp = vel;
@@ -294,6 +321,8 @@ impl Clap {
             2 => (950.0, 1.0, length * 2.2),
             // Snap: lower and wider than it used to be, so it clicks without piercing
             3 => (1650.0, 1.0, 0.045),
+            // Noise: a long, bright industrial snare
+            4 => (5200.0, 0.6, length * 1.7),
             _ => (1150.0, 1.3, length),
         };
         self.bp.set(band * pitch, q, sr);
@@ -323,7 +352,12 @@ impl Clap {
                 self.tail *= self.tail_decay;
                 // A soft half-millisecond attack takes the sting out of the click
                 let attack = (ms / 0.5).min(1.0);
-                self.bp.run(n).bp * self.tail * self.amp * attack * 2.6
+                self.bp.run(n).bp * self.tail * self.amp * attack * 3.7
+            }
+            4 => {
+                self.tail *= self.tail_decay;
+                let attack = (ms / 1.0).min(1.0);
+                self.hp.run(self.bp.run(n).bp + n * 0.4).hp * self.tail * self.amp * attack * 1.0
             }
             m => {
                 // Quick bursts (hands not clapping exactly together), then the tail
@@ -335,7 +369,17 @@ impl Clap {
                     self.tail *= self.tail_decay;
                     self.tail * 0.8
                 };
-                self.bp.run(n).bp * env * self.amp * if m == 2 { 2.4 } else { 2.6 }
+                let x = self.bp.run(n).bp * env * self.amp * if m == 2 { 2.4 } else { 2.6 };
+                if m != 5 {
+                    return x;
+                }
+                // Lo-fi: 7 kHz sample rate and a dozen levels
+                self.held += 1.0;
+                if self.held >= sr / 7000.0 {
+                    self.held -= sr / 7000.0;
+                    self.hold = (x * 12.0).round() / 12.0;
+                }
+                self.hold * 1.1
             }
         }
     }
@@ -368,7 +412,7 @@ impl Rim {
         }
     }
 
-    /// `model` in `Voice::Rim.sounds()` order: rim, cowbell, clave, tom, blip; `decay` stretches the envelopes
+    /// `model` in `Voice::Rim.sounds()` order: rim, cowbell, clave, tom, blip, conga, zap; `decay` stretches the envelopes
     pub fn trigger(&mut self, vel: f32, pitch: f32, model: u8, decay: f32) {
         self.t = 0.0;
         self.amp = vel;
@@ -409,6 +453,19 @@ impl Rim {
                 let index = 3.0 * (-te / 0.012).exp();
                 let m = (TAU * 1730.0 * p * t).sin() * index;
                 (TAU * 1150.0 * p * t + m).sin() * (-te / 0.045).exp() * self.amp * 0.7
+            }
+            5 => {
+                // Conga: a sine that drops a little into its note, with a slap
+                let hz = (330.0 + 90.0 * (-te / 0.008).exp()) * p;
+                self.phases[0] = (self.phases[0] + hz / sr) % 1.0;
+                let slap = rng.noise() * (-te / 0.002).exp() * 0.3;
+                ((self.phases[0] * TAU).sin() * (-te / 0.12).exp() + slap) * self.amp * 0.42
+            }
+            6 => {
+                // Zap: a fast laser sweep down
+                let hz = (180.0 + 2800.0 * (-te / 0.012).exp()) * p;
+                self.phases[0] = (self.phases[0] + hz / sr) % 1.0;
+                (self.phases[0] * TAU).sin() * (-te / 0.08).exp() * self.amp * 0.55
             }
             _ => {
                 let tone = (TAU * 1720.0 * p * t).sin() * 0.55 + (TAU * 495.0 * p * t).sin() * 0.7;
@@ -477,24 +534,30 @@ const fn hat(scale: f32, band: f32, hp: f32, noise: f32, length: f32, rise: f32,
     }
 }
 
-/// Closed hats: 909, 808, shaker, tick
-pub const HATS: [HatModel; 4] = [
+/// Closed hats: 909, 808, shaker, tick, metal, crisp
+pub const HATS: [HatModel; 6] = [
     hat(1.0, 10_000.0, 7_000.0, 0.45, 1.0, 0.0, 1.0),
     hat(1.0, 10_000.0, 7_000.0, 0.05, 0.9, 0.0, 2.6),
     hat(1.0, 7_000.0, 4_500.0, 1.0, 1.5, 0.012, 0.5),
     hat(1.6, 12_000.0, 9_000.0, 0.3, 0.4, 0.0, 2.2),
+    hat(1.35, 9_500.0, 6_000.0, 0.0, 0.7, 0.0, 2.8),
+    hat(1.0, 13_000.0, 10_000.0, 1.0, 0.6, 0.0, 0.7),
 ];
-/// Open hats: 909, 808, sizzle
-pub const OPEN_HATS: [HatModel; 3] = [
+/// Open hats: 909, 808, sizzle, long, metal
+pub const OPEN_HATS: [HatModel; 5] = [
     hat(1.0, 9_000.0, 6_500.0, 0.4, 1.0, 0.0, 1.0),
     hat(1.0, 9_000.0, 6_500.0, 0.05, 1.0, 0.0, 2.3),
     hat(1.25, 11_000.0, 8_000.0, 0.7, 1.6, 0.004, 0.55),
+    hat(1.0, 9_000.0, 6_500.0, 0.4, 2.2, 0.0, 0.95),
+    hat(1.45, 8_500.0, 5_500.0, 0.05, 1.3, 0.0, 2.1),
 ];
-/// Rides: ride, bell, dark
-pub const RIDES: [HatModel; 3] = [
-    hat(1.37, 6_200.0, 3_800.0, 0.15, 1.0, 0.0, 1.0),
+/// Rides: ride, bell, dark, crash, shimmer
+pub const RIDES: [HatModel; 5] = [
+    hat(1.37, 6_200.0, 3_800.0, 0.15, 1.0, 0.0, 1.2),
     hat(2.1, 4_200.0, 2_600.0, 0.02, 0.55, 0.0, 1.0),
     hat(0.9, 4_600.0, 2_800.0, 0.3, 1.2, 0.0, 1.0),
+    hat(1.2, 7_500.0, 4_500.0, 0.65, 2.4, 0.0, 0.42),
+    hat(2.6, 7_000.0, 4_800.0, 0.1, 1.4, 0.0, 1.0),
 ];
 
 #[derive(Clone)]
@@ -618,6 +681,8 @@ impl Bass {
             2 => (0.6, 0.12),
             3 => (0.2, 0.06),
             4 => (0.13, 0.022),
+            5 => (0.3, 0.08),
+            6 => (0.35, 0.1),
             _ => (0.22, 0.055),
         };
         self.adecay = decay_coef(a * decay, sr);
@@ -662,6 +727,17 @@ impl Bass {
                 self.lp.set(140.0 + open * 120.0 + self.fenv * (2200.0 + bright * 1600.0), 7.0, sr);
                 self.lp.run(x).lp * 1.1
             }
+            5 => {
+                // FM: a sine bending itself, the index falls with the envelope
+                let index = 0.6 + self.fenv * (2.5 + bright * 2.0);
+                (self.sub * TAU + index * sub).sin() * 0.62
+            }
+            6 => {
+                // Growl: a driven saw into a resonant filter
+                let x = sat((self.saw.next(self.hz, sr) * 0.9 + sub * 0.4) * 3.0);
+                self.lp.set(180.0 + open * 300.0 + self.fenv * (900.0 + bright * 1500.0), 3.0, sr);
+                self.lp.run(x).lp * 0.9
+            }
             _ => {
                 let x = self.saw.next(self.hz, sr) * 0.8 + sub * 0.5;
                 self.lp.set(90.0 + open * 160.0 + self.fenv * (350.0 + bright * 1100.0), 1.4, sr);
@@ -672,7 +748,7 @@ impl Bass {
     }
 }
 
-/// The synth line: 303 acid (saw or square), chord stab, pluck or rave hoover.
+/// The synth line: 303 acid (saw or square), chord stab, pluck, rave hoover, pad, organ or supersaw.
 /// Up to six saw oscillators into a resonant low-pass with envelope, accent and slide.
 #[derive(Clone)]
 pub struct Acid {
@@ -695,6 +771,9 @@ pub struct Acid {
     /// Hoover: pitch rises into the note
     bend: f32,
     bend_coef: f32,
+    /// Pad: the swell into the chord (0 → 1)
+    rise: f32,
+    rise_coef: f32,
     model: u8,
 }
 
@@ -718,6 +797,8 @@ impl Acid {
             accent: 0.0,
             bend: 0.0,
             bend_coef: 0.0,
+            rise: 1.0,
+            rise_coef: 0.0,
             model: u8::MAX,
         };
         a.set_model(0, [0.0, 3.0, 7.0]);
@@ -735,7 +816,7 @@ impl Acid {
                 self.gain[0] = 1.0;
                 self.gain[1] = -1.0;
             }
-            2 => {
+            2 | 5 => {
                 for (i, &c) in chord.iter().enumerate() {
                     self.ratio[i * 2] = st(c + 0.08);
                     self.ratio[i * 2 + 1] = st(c - 0.08);
@@ -752,6 +833,21 @@ impl Acid {
                 for (i, d) in [-0.32f32, -0.12, 0.0, 0.12, 0.32, -12.0].into_iter().enumerate() {
                     self.ratio[i] = st(d);
                     self.gain[i] = if i == 5 { 0.5 } else { 0.38 };
+                }
+            }
+            6 => {
+                // Organ: the chord plus its octave
+                for (i, &c) in chord.iter().enumerate() {
+                    self.ratio[i * 2] = st(c);
+                    self.ratio[i * 2 + 1] = st(c + 12.0);
+                    self.gain[i * 2] = 0.4;
+                    self.gain[i * 2 + 1] = 0.25;
+                }
+            }
+            7 => {
+                for (i, d) in [-0.25f32, -0.1, -0.03, 0.03, 0.1, 0.25].into_iter().enumerate() {
+                    self.ratio[i] = st(d);
+                    self.gain[i] = 0.3;
                 }
             }
             _ => self.gain[0] = 1.0,
@@ -782,12 +878,17 @@ impl Acid {
             2 => (0.14, 0.32),
             3 => (0.07, 0.2),
             4 => (0.3, 2.0),
+            5 => (0.6, 3.0),
+            6 => (0.05, 0.45),
+            7 => (0.12, 0.4),
             _ => (if accent { 0.09 } else { 0.2 }, 1e3),
         };
         self.fdecay = decay_coef(fd * decay, sr);
         self.adecay = decay_coef(ad * decay, sr);
         self.bend = if model == 4 { 1.0 } else { 0.0 };
         self.bend_coef = decay_coef(0.07, sr);
+        self.rise = if model == 5 { 0.0 } else { 1.0 };
+        self.rise_coef = decay_coef(0.12 * decay, sr);
         self.gate = gate;
     }
 
@@ -816,15 +917,23 @@ impl Acid {
             self.gate -= 1.0;
             self.env *= self.adecay;
         } else {
-            self.env *= if self.model == 4 { 0.9995 } else { 0.993 };
+            self.env *= match self.model {
+                4 => 0.9995,
+                5 => 0.99985,
+                _ => 0.993,
+            };
         }
         self.fenv *= self.fdecay;
         self.bend *= self.bend_coef;
+        self.rise = 1.0 - (1.0 - self.rise) * self.rise_coef;
         let a = acid.clamp(0.0, 1.0);
         let (cutoff, q, drive, level) = match self.model {
             2 => (300.0 + a * 1800.0 + (1200.0 + a * 2600.0) * self.fenv, 1.2 + a * 3.0, 1.3, 1.0),
             3 => (350.0 + a * 1400.0 + (2200.0 + a * 3500.0) * self.fenv, 1.0 + a * 4.0, 1.4, 1.1),
             4 => (900.0 + a * 3500.0 + 1500.0 * self.fenv, 0.8 + a * 1.5, 1.6, 0.85),
+            5 => (500.0 + a * 1500.0 + 800.0 * self.fenv, 0.8, 1.1, 1.1 * self.rise),
+            6 => (900.0 + a * 2500.0 + 2500.0 * self.fenv, 0.7, 1.5, 1.2),
+            7 => (1200.0 + a * 3500.0 + 3000.0 * self.fenv, 1.0, 1.3, 1.25),
             _ => {
                 let base = 140.0 + a * a * 1800.0;
                 let depth = (500.0 + a * 3600.0) * (1.0 + self.accent * 0.8);

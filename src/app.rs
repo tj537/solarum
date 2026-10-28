@@ -79,11 +79,6 @@ fn fx_color(fx: Fx) -> Color32 {
     }
 }
 
-/// 303 lines and stab/pluck/hoover lines are written differently
-fn synth_family(sound: u8) -> u8 {
-    (sound >= 2) as u8 + (sound >= 3) as u8 + (sound >= 4) as u8
-}
-
 #[derive(Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum View {
     Orbit,
@@ -684,7 +679,7 @@ impl SolarumApp {
         self.song.tracks[i].sound = sound;
         let name = voice.sounds()[sound as usize];
         // With SOLAR OS on, a sound of another family gets a fitting line – by hand your line stays
-        if voice == Voice::Acid && self.song.auto && synth_family(old) != synth_family(sound) {
+        if voice == Voice::Acid && self.song.auto && gen::synth_family(old) != gen::synth_family(sound) {
             self.roll_track(i);
             self.say(format!("{name}: new line to fit the sound (undo keeps the old one)"), now);
         } else {

@@ -82,7 +82,7 @@ While SOLAR OS plays, *Settings → SOLAR OS* can switch off the ghost hats and 
 ### Grooves and sounds
 
 - **Ten vibes:** Dub, Minimal, Melodic, Hypnotic, Electro, Peak time, Acid, Rave, Industrial and Hard, each with its own tempo, sounds and pattern rules. Pick one in the auto mode's terminal, then press **SHUFFLE** (<kbd>Enter</kbd>) for a new groove – always clearly different from the last one, sometimes busier, sometimes sparser. **Custom** starts from an empty pattern for you to paint.
-- **Eight tracks, 34 sounds:** five kicks (909, 808, Hard, Deep, Punch), clap, snare and snap, rim, cowbell, clave and toms, closed and open hats, rides, five basses (rolling, sub, reese, pulse, donk), and a synth that plays 303 saw or square, chord stabs, plucks or a rave hoover. Click a track's name to hear it. Every track has tune, decay, solo, mute, a dice for a new rhythm, and a lock that keeps shuffles away from it.
+- **Eight tracks, 51 sounds:** seven kicks (909, 808, Hard, Deep, Punch, Rumble, Distort), clap, snare, snap, noise snare and a lo-fi clap, rim, cowbell, clave, toms, blip, conga and zap, closed hats (909, 808, shaker, tick, metal, crisp), open hats, rides and a crash, seven basses (rolling, sub, reese, pulse, donk, FM, growl), and a synth that plays 303 saw or square, chord stabs, plucks, a rave hoover, pads, organ or a supersaw. Click a track's name to hear it. Every track has tune, decay, solo, mute, a dice for a new rhythm, and a lock that keeps shuffles away from it.
 
 ### The planets
 
