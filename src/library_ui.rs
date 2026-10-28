@@ -859,10 +859,10 @@ impl LibraryUi {
             pos2(to_x(ks).max(wave.left()), wave.top()),
             pos2(to_x(ke).min(wave.right()), wave.bottom()),
         );
-        // Inside the cut: the sound as it plays – reversed, filtered, crushed, levelled, and
-        // squeezed or stretched by its pitch – so every turn of a card shows
+        // Inside the cut: the sound as it plays – reversed, filtered, crushed, levelled, faded –
+        // always exactly between start and end (the pitch shows in its length)
         let ratio = 2f32.powf(-e.edit.pitch / 12.0);
-        let shown_end = ks + (ke - ks) * ratio;
+        let shown_end = ke;
         if kr.width() > 0.0 {
             clip.rect_filled(kr, 0.0, mix(SPACE, col, 0.07));
             match self.rendered_source(lib, id) {
@@ -880,15 +880,10 @@ impl LibraryUi {
                 None => draw_wave(&clip.with_clip_rect(kr), wave, &src, v0, v1, col),
             }
         }
-        // Fades as lines from the corners, with a dot to grab
+        // Fades: grabbed along the top edge inside the cut (the wave itself shows them)
         let fi = to_x(ks + e.edit.fade_in);
         let fo = to_x(ke - e.edit.fade_out);
-        let fy = wave.top() + 14.0;
-        clip.line_segment([pos2(to_x(ks), wave.bottom()), pos2(fi, fy)], stroke(1.2, alpha(TEXT, 0.45)));
-        clip.line_segment([pos2(fo, fy), pos2(to_x(ke), wave.bottom())], stroke(1.2, alpha(TEXT, 0.45)));
-        for x in [fi, fo] {
-            clip.circle_filled(pos2(x, fy), 5.0, TEXT);
-        }
+        let fade_band = |pos: Pos2| pos.y < wave.top() + 30.0 && pos.x > to_x(ks) + 8.0 && pos.x < to_x(ke) - 8.0;
         // Slice lines and their flags
         let marks: Vec<f32> = {
             let mut m = e.slices.clone();
@@ -931,9 +926,9 @@ impl LibraryUi {
         if let (Some(pl), Some(pos)) = (&self.playing, playhead) {
             if pl.id == id {
                 let dt = pos as f32 / SAMPLE_SR;
-                // The whole sound is drawn as it plays (reversed, pitched); a slice on the source
+                // The whole sound is drawn as it plays (reversed too); a slice on the source
                 let t = if pl.whole {
-                    pl.from + dt * ratio
+                    pl.from + dt
                 } else if pl.reverse {
                     pl.to - dt
                 } else {
@@ -969,13 +964,13 @@ impl LibraryUi {
                 if lane.contains(pos) {
                     return marks_now.iter().position(|&m| (to_x(m) - pos.x).abs() < 7.0).map(Handle::Slice);
                 }
-                if (pos.y - fy).abs() < 9.0 {
-                    if (fi - pos.x).abs() < 8.0 {
-                        return Some(Handle::FadeIn);
-                    }
-                    if (fo - pos.x).abs() < 8.0 {
-                        return Some(Handle::FadeOut);
-                    }
+                if fade_band(pos) {
+                    // The nearer of the two fades
+                    return Some(if (fi - pos.x).abs() <= (fo - pos.x).abs() {
+                        Handle::FadeIn
+                    } else {
+                        Handle::FadeOut
+                    });
                 }
                 if (to_x(ks) - pos.x).abs() < 8.0 {
                     return Some(Handle::Start);
@@ -986,6 +981,27 @@ impl LibraryUi {
                 None
             };
             if let Some(pos) = resp.hover_pos() {
+                // Say what a drag does where the mouse is
+                let hint = match near(pos) {
+                    Some(Handle::Start) => Some("Start – drag to cut"),
+                    Some(Handle::End) => Some("End – drag to cut"),
+                    Some(Handle::FadeIn) => Some("Fade in – drag"),
+                    Some(Handle::FadeOut) => Some("Fade out – drag"),
+                    _ => None,
+                };
+                if let (Some(h), None) = (hint, self.drag) {
+                    let g = p.layout_no_wrap(h.to_string(), bold(11.0), TEXT);
+                    let at = pos2(pos.x + 14.0, pos.y + 16.0);
+                    let br = Rect::from_min_size(at, g.size() + vec2(14.0, 8.0));
+                    p.rect_filled(br, 6.0, Color32::from_rgb(20, 20, 24));
+                    p.galley(br.min + vec2(7.0, 4.0), g, TEXT);
+                }
+                if fade_band(pos) && self.drag.is_none() {
+                    // A faint line where the fades end
+                    for x in [fi, fo] {
+                        clip.line_segment([pos2(x, wave.top()), pos2(x, wave.bottom())], stroke(1.0, alpha(TEXT, 0.35)));
+                    }
+                }
                 match near(pos) {
                     Some(_) => ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal),
                     None if lane.contains(pos) => ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair),
