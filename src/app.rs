@@ -82,6 +82,14 @@ fn fx_color(fx: Fx) -> Color32 {
     }
 }
 
+/// A seed from any text (FNV-1a), the same on every computer
+fn seed_of(text: &str) -> u64 {
+    text.trim()
+        .to_lowercase()
+        .bytes()
+        .fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ b as u64).wrapping_mul(0x0100_0000_01b3))
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum View {
     Orbit,
@@ -904,9 +912,25 @@ impl SolarumApp {
     }
 
     fn shuffle(&mut self, vibe: Vibe, now: f64) {
-        let keep_bpm = self.keep_tempo || (self.playing() && vibe == self.song.vibe);
+        self.roll(vibe, None, now);
+    }
+
+    /// A groove from a word: the same seed in the same vibe always rolls the same beat
+    /// (locked tracks stay as they are)
+    fn seeded(&mut self, seed: &str, now: f64) {
+        self.roll(self.song.vibe, Some(seed_of(seed)), now);
+    }
+
+    /// A new groove – by chance, or from a seed (then without looking at the groove before,
+    /// and with the tempo the seed brings unless the settings keep it)
+    fn roll(&mut self, vibe: Vibe, seed: Option<u64>, now: f64) {
+        let keep_bpm = self.keep_tempo || (seed.is_none() && self.playing() && vibe == self.song.vibe);
         let keep = self.song.tracks.map(|t| t.lock.then_some(t));
-        let mut s = gen::shuffle(vibe, &self.song.macros, &mut self.rng, &keep, &self.song);
+        let mut seeded = seed.map(Rng::new);
+        let mut s = match &mut seeded {
+            Some(rng) => gen::generate_keeping(vibe, &self.song.macros, rng, &keep),
+            None => gen::shuffle(vibe, &self.song.macros, &mut self.rng, &keep, &self.song),
+        };
         s = keep_live_settings(s, &self.song);
         for (t, old) in s.tracks.iter_mut().zip(&self.song.tracks) {
             t.volume = old.volume;
@@ -918,7 +942,7 @@ impl SolarumApp {
             s.mood_hold = true;
             s.scale = self.song.scale;
             s.prog = self.song.prog;
-            gen::refit_notes(&mut s, &mut self.rng);
+            gen::refit_notes(&mut s, seeded.as_mut().unwrap_or(&mut self.rng));
         }
         self.song = s;
         self.solo = None;
@@ -1836,7 +1860,7 @@ impl SolarumApp {
         };
         match first {
             "help" | "?" | "commands" => self.bunk(
-                "I know: shuffle · vibe acid · vibes · drop · fx on/off · every 8 · mood dark · bpm 135 · status · joke · off",
+                "I know: shuffle · seed tom · vibe acid · vibes · drop · fx on/off · every 8 · mood dark · bpm 135 · status · joke · off",
                 now,
             ),
             "shuffle" | "roll" | "again" | "next" | "new" => {
@@ -1848,6 +1872,23 @@ impl SolarumApp {
                     "There. Tell me if it slaps.",
                 ];
                 self.bunk(QUIPS[pick(1, QUIPS.len())], now);
+            }
+            "seed" => {
+                // A word of your own, or one Solari picks so you can come back to it
+                let word = if arg.is_empty() {
+                    const WORDS: [&str; 8] = ["nebula", "pulsar", "comet", "orbit", "quasar", "aurora", "meteor", "eclipse"];
+                    format!("{}-{}", WORDS[pick(3, WORDS.len())], pick(4, 90) + 10)
+                } else {
+                    arg.clone()
+                };
+                self.seeded(&word, now);
+                self.bunk(
+                    format!(
+                        "Seed \"{word}\" in {}. Same seed, same vibe – same beat, any time.",
+                        self.song.vibe.name()
+                    ),
+                    now,
+                );
             }
             "vibes" | "list" => {
                 let names: Vec<&str> = Vibe::ALL.iter().map(|v| v.name()).collect();
@@ -4165,6 +4206,20 @@ mod tests {
         app.start_song(0, 0.0);
         app.stop_song(0.0);
         assert_eq!(app.song_form, None);
+    }
+
+    #[test]
+    fn a_seed_always_rolls_the_same_beat() {
+        let mut a = SolarumApp::headless(Song::default(), View::Planets, false);
+        let mut b = SolarumApp::headless(Song::default(), View::Planets, false);
+        b.shuffle(Vibe::Acid, 0.0);
+        b.song.vibe = a.song.vibe;
+        a.command("seed tom", 0.0);
+        b.command("seed Tom", 1.0);
+        assert_eq!(a.song.tracks.map(|t| (t.steps, t.sound)), b.song.tracks.map(|t| (t.steps, t.sound)));
+        assert_eq!(a.song.bpm, b.song.bpm);
+        a.command("seed anna", 0.0);
+        assert_ne!(a.song.tracks.map(|t| t.steps), b.song.tracks.map(|t| t.steps));
     }
 
     #[test]

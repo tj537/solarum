@@ -118,7 +118,7 @@ The **AUTO FX** switch (under SET, on by default) decides who arranges:
 
 **The terminal** types out, like an old computer, everything Solarum says and does: where the set is, when the breakdown and the drop are coming and how hot the set runs; during a song it follows the song. Now and then it adds where the set stands (minutes, drops), what's playing (vibe, key, mood, tempo) or a tip.
 
-It's a little operating system, **SOLAR OS**. The title bar has **SET** (how often Solari changes something, AUTO FX) and **OFF**; the menu below has **VIBE** (picking one rolls a groove in it) and **SHUFFLE**; and at the bottom is Solari's prompt. Type `shuffle`, `vibe acid` (or just `acid`), `vibes`, `drop`, `fx off`, `every 8`, `mood dark`, `bpm 135`, `status`, `joke`, `help` or `off`.
+It's a little operating system, **SOLAR OS**. The title bar has **SET** (how often Solari changes something, AUTO FX) and **OFF**; the menu below has **VIBE** (picking one rolls a groove in it) and **SHUFFLE**; and at the bottom is Solari's prompt. Type `shuffle`, `vibe acid` (or just `acid`), `vibes`, `drop`, `fx off`, `every 8`, `mood dark`, `bpm 135`, `status`, `joke`, `help` or `off`. `seed tom` rolls a beat from any word – the same seed in the same vibe always gives the same beat (locked tracks stay), so you can share a groove as one word; `seed` alone picks one for you and tells you which.
 
 ### Sound and effects
 
