@@ -237,7 +237,7 @@ mod tests {
                 ..playing(66.2, &[0, 1, 3, 6])
             });
         });
-        // The SOUNDS screen: a few sounds, a loop cut into slices, three of them in the project
+        // The SOUNDS screen: a few sounds, a loop reversed and pitched, two of them in the project
         render("sounds", 1360.0, 860.0, |app| {
             use crate::song::Voice;
             let sr = crate::sampler::SAMPLE_SR;
@@ -262,9 +262,7 @@ mod tests {
             lib.add("Door knock", Voice::Rim, hits(&mut rng, 1.2, 0.3));
             lib.add("Shaker take 2", Voice::Hat, hits(&mut rng, 0.8, 0.1));
             let lp = lib.add("Pot and pan loop", Voice::Clap, hits(&mut rng, 2.0, 0.25));
-            let src = lib.source(lib.get(lp).unwrap()).unwrap().clone();
             let e = lib.get_mut(lp).unwrap();
-            e.slices = crate::library::transients(&src.data, 0.0, 0.0, 0.5);
             e.edit.low_cut = 180.0;
             e.edit.pitch = 5.0;
             e.edit.reverse = true;

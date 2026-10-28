@@ -64,14 +64,12 @@ impl Default for Edit {
 #[serde(default)]
 pub struct Entry {
     pub id: u64,
-    /// The audio it cuts from (slices of one recording share it)
+    /// The audio it plays (copies of a sound share it)
     pub source: u64,
     pub name: String,
     /// The one track it plays on
     pub voice: Voice,
     pub edit: Edit,
-    /// Slice markers in seconds into the source
-    pub slices: Vec<f32>,
     /// Unix seconds, for the newest-first list
     pub added: u64,
     /// Just recorded or imported, not saved yet: not in the list (and gone at the next start)
@@ -86,7 +84,6 @@ impl Default for Entry {
             name: String::new(),
             voice: Voice::Rim,
             edit: Edit::default(),
-            slices: Vec::new(),
             added: 0,
             draft: false,
         }
@@ -244,28 +241,6 @@ impl Library {
                 name: name.to_string(),
                 voice,
                 edit,
-                slices: Vec::new(),
-                added: now_secs(),
-                draft: false,
-            },
-        );
-        self.save();
-        id
-    }
-
-    /// Another sound cut from the same audio (a copy, or a slice)
-    pub fn add_cut(&mut self, from: &Entry, name: String, edit: Edit) -> u64 {
-        let id = new_id();
-        let at = self.entries.iter().position(|e| e.id == from.id).map_or(0, |i| i + 1);
-        self.entries.insert(
-            at,
-            Entry {
-                id,
-                source: from.source,
-                name,
-                voice: from.voice,
-                edit,
-                slices: Vec::new(),
                 added: now_secs(),
                 draft: false,
             },
@@ -446,41 +421,6 @@ pub fn trim_points(x: &[f32]) -> (f32, f32) {
     let a = first.saturating_sub(pre);
     let b = (last + post).min(x.len());
     (a as f32 / SAMPLE_SR, if b >= x.len() { 0.0 } else { b as f32 / SAMPLE_SR })
-}
-
-/// Hits in the audio between `from` and `to` (seconds): where the level jumps.
-/// `sensitivity` 0…1 – higher finds softer hits.
-pub fn transients(x: &[f32], from: f32, to: f32, sensitivity: f32) -> Vec<f32> {
-    const HOP: usize = 256;
-    let a = (from * SAMPLE_SR) as usize;
-    let b = if to <= 0.0 {
-        x.len()
-    } else {
-        ((to * SAMPLE_SR) as usize).min(x.len())
-    };
-    if b <= a + HOP * 4 {
-        return Vec::new();
-    }
-    let energy: Vec<f32> = x[a..b]
-        .chunks(HOP)
-        .map(|c| (c.iter().map(|s| s * s).sum::<f32>() / c.len() as f32 + 1e-9).ln())
-        .collect();
-    let peak = energy.iter().cloned().fold(f32::MIN, f32::max);
-    let threshold = 2.6 - sensitivity.clamp(0.0, 1.0) * 2.1;
-    let gap = (0.06 * SAMPLE_SR / HOP as f32) as usize;
-    let mut out = Vec::new();
-    let mut last = 0usize;
-    for k in 2..energy.len() {
-        let rise = energy[k] - energy[k - 2].min(energy[k - 1]);
-        // Not in the noise floor, a real jump, and not right after the last one
-        if energy[k] > peak - 9.0 && rise > threshold && (out.is_empty() || k - last > gap) {
-            out.push((a + (k - 1) * HOP) as f32 / SAMPLE_SR);
-            last = k;
-        }
-    }
-    // The very start is not a slice point
-    out.retain(|&t| t > from + 0.01);
-    out
 }
 
 /// Guess a track from a file name (kick, snare, hat …); unknown sounds become percussion
@@ -874,16 +814,6 @@ mod tests {
                 (t * 900.0).sin() * (-t / 0.03).exp() * 0.8 + rng.noise() * 0.001
             })
             .collect()
-    }
-
-    #[test]
-    fn finds_the_hits() {
-        let x = hits();
-        let t = transients(&x, 0.0, 0.0, 0.5);
-        assert_eq!(t.len(), 3, "{t:?}");
-        for (k, s) in t.iter().enumerate() {
-            assert!((s - (k + 1) as f32 * 0.25).abs() < 0.01, "{t:?}");
-        }
     }
 
     #[test]

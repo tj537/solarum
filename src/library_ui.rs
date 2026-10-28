@@ -1,7 +1,7 @@
 //! The SOUNDS screen: your library on the left (filter by track, the project's eight slots), the
 //! editor on the right – a waveform you cut by dragging its edges and fades, the track it plays
 //! on as a row of colours, and picture tiles for what you can do to it: pitch, reverse, tone,
-//! crush, trim and chop (slices you play as pads). Plus importing and recording.
+//! and crush. Plus drawing, importing and recording.
 
 use crate::library::{self, Edit, Entry, Library, Recorder, SlotIds, Source, BLOCK, MAX_SECONDS};
 use crate::sampler::{SampleBuf, SAMPLE_SLOTS, SAMPLE_SR};
@@ -31,7 +31,6 @@ enum Handle {
     End,
     FadeIn,
     FadeOut,
-    Slice(usize),
     Pan,
 }
 
@@ -60,8 +59,6 @@ pub struct LibraryUi {
     redo: Vec<Entry>,
     looped: bool,
     playing: Option<Playing>,
-    /// How eagerly CHOP finds hits (dragging the tile)
-    sensitivity: f32,
     /// A sound waiting for a slot (all eight are taken)
     replace: Option<u64>,
     confirm_delete: Option<u64>,
@@ -96,7 +93,6 @@ impl Default for LibraryUi {
             redo: Vec::new(),
             looped: false,
             playing: None,
-            sensitivity: 0.5,
             replace: None,
             confirm_delete: None,
             record_panel: false,
@@ -123,29 +119,37 @@ fn fmt_secs(s: f32) -> String {
     }
 }
 
+/// How much the edit makes the source louder or softer (normalize or gain)
+fn level_of(src: &Source, e: &Edit) -> f32 {
+    if !e.normalize {
+        return 10f32.powf(e.gain / 20.0);
+    }
+    let (a, b) = library::span(src.data.len(), e);
+    let peak = src.data[a..b].iter().fold(0.0f32, |m, x| m.max(x.abs()));
+    if peak > 1e-5 {
+        0.89 / peak
+    } else {
+        1.0
+    }
+}
+
 /// The edit's kept part in seconds
 fn kept(src: &Source, e: &Edit) -> (f32, f32) {
     let (a, b) = library::span(src.data.len(), e);
     (a as f32 / SAMPLE_SR, b as f32 / SAMPLE_SR)
 }
 
-/// The edges of the slices: start, the markers in between, end
-fn edges(e: &Edit, ks: f32, ke: f32, slices: &[f32]) -> Vec<f32> {
-    let _ = e;
-    let mut v = vec![ks];
-    let mut m: Vec<f32> = slices.iter().copied().filter(|&m| m > ks && m < ke).collect();
-    m.sort_by(f32::total_cmp);
-    v.extend(m);
-    v.push(ke);
-    v
-}
-
 /// A waveform of `src` from `from` to `to` seconds into `r`
 fn draw_wave(p: &egui::Painter, r: Rect, src: &Source, from: f32, to: f32, color: Color32) {
+    draw_wave_gain(p, r, src, from, to, color, 1.0);
+}
+
+/// The same, louder or softer (as the edit levels the sound)
+fn draw_wave_gain(p: &egui::Painter, r: Rect, src: &Source, from: f32, to: f32, color: Color32, gain: f32) {
     let w = r.width().max(1.0) as usize;
     let span = (to - from).max(1e-6);
     let mid = r.center().y;
-    let h = r.height() * 0.48;
+    let h = r.height() * 0.48 * gain;
     let mut segs = Vec::with_capacity(w);
     for x in 0..w {
         let t0 = from + span * x as f32 / w as f32;
@@ -181,7 +185,6 @@ enum Tile {
     Reverse,
     Tone,
     Crush,
-    Chop,
     /// Soft, bright or air – what a drawn line sounds like
     Wave(u8),
     Length,
@@ -257,17 +260,6 @@ fn picture(p: &egui::Painter, r: Rect, tile: Tile, v: f32, col: Color32, t: f32)
             p.line_segment([pos2(r.left(), y), pos2(r.right(), y)], faint);
             p.line_segment([pos2(r.left(), y), pos2(x1, y)], stroke(3.0, col));
             p.circle_filled(pos2(x1, y), 5.0, col);
-        }
-        Tile::Chop => {
-            let n = v.round().max(1.0) as usize;
-            curve(p, r, s, |x| {
-                let k = (x * n as f32).fract();
-                (x * TAU * 6.0 * n as f32).sin() * (-k * 5.0).exp() * 0.9
-            });
-            for i in 1..n {
-                let x = r.left() + r.width() * i as f32 / n as f32;
-                p.line_segment([pos2(x, r.top()), pos2(x, r.bottom())], stroke(1.2, ACID));
-            }
         }
     }
 }
@@ -834,17 +826,14 @@ impl LibraryUi {
         });
 
         // ── The waveform ──
-        let chopped = !e.slices.is_empty();
-        let lane_h = if chopped { 18.0 } else { 0.0 };
         let zoomed = self.view.1 - self.view.0 < len * 0.98;
         let over_h = if zoomed { 22.0 } else { 0.0 };
-        let wave_h = (ui.available_height() - 250.0 - if chopped { 50.0 } else { 0.0 }).clamp(120.0, 380.0);
+        let wave_h = (ui.available_height() - 250.0).clamp(120.0, 380.0);
         let (area, _) = ui.allocate_exact_size(
-            vec2(inner.width(), lane_h + wave_h + over_h + if zoomed { 6.0 } else { 0.0 }),
+            vec2(inner.width(), wave_h + over_h + if zoomed { 6.0 } else { 0.0 }),
             Sense::hover(),
         );
-        let lane = Rect::from_min_size(area.min, vec2(area.width(), lane_h));
-        let wave = Rect::from_min_size(pos2(area.left(), lane.bottom()), vec2(area.width(), wave_h));
+        let wave = Rect::from_min_size(area.min, vec2(area.width(), wave_h));
         let over = Rect::from_min_size(pos2(area.left(), wave.bottom() + 6.0), vec2(area.width(), over_h));
         let (v0, v1) = self.view;
         let span = (v1 - v0).max(1e-4);
@@ -854,7 +843,9 @@ impl LibraryUi {
 
         p.rect_filled(wave, 14.0, SPACE);
         let clip = p.with_clip_rect(wave.shrink(1.0));
-        draw_wave(&clip, wave, &src, v0, v1, alpha(FAINT, 0.3));
+        // Outside the cut: the rest of the source, levelled like the cut so both match
+        let gain = level_of(&src, &e.edit);
+        draw_wave_gain(&clip, wave, &src, v0, v1, alpha(FAINT, 0.3), gain);
         let kr = Rect::from_min_max(
             pos2(to_x(ks).max(wave.left()), wave.top()),
             pos2(to_x(ke).min(wave.right()), wave.bottom()),
@@ -884,35 +875,6 @@ impl LibraryUi {
         let fi = to_x(ks + e.edit.fade_in);
         let fo = to_x(ke - e.edit.fade_out);
         let fade_band = |pos: Pos2| pos.y < wave.top() + 30.0 && pos.x > to_x(ks) + 8.0 && pos.x < to_x(ke) - 8.0;
-        // Slice lines and their flags
-        let marks: Vec<f32> = {
-            let mut m = e.slices.clone();
-            m.sort_by(f32::total_cmp);
-            m
-        };
-        for (i, &m) in marks.iter().enumerate() {
-            let x = to_x(m);
-            if x < wave.left() || x > wave.right() {
-                continue;
-            }
-            clip.line_segment([pos2(x, wave.top()), pos2(x, wave.bottom())], stroke(1.0, alpha(ACID, 0.7)));
-            p.add(Shape::convex_polygon(
-                vec![
-                    pos2(x - 6.0, lane.top() + 2.0),
-                    pos2(x + 6.0, lane.top() + 2.0),
-                    pos2(x, lane.bottom()),
-                ],
-                ACID,
-                Stroke::NONE,
-            ));
-            p.text(
-                pos2(x + 8.0, lane.center().y),
-                Align2::LEFT_CENTER,
-                format!("{}", i + 2),
-                bold(9.5),
-                ACID,
-            );
-        }
         // Start and end: bright bars with a grip
         for t in [ks, ke] {
             let x = to_x(t);
@@ -958,12 +920,8 @@ impl LibraryUi {
 
         // ── Interaction with the waveform ──
         if !blocked {
-            let resp = ui.interact(lane.union(wave), ui.id().with(("wave", id)), Sense::click_and_drag());
-            let marks_now = marks.clone();
+            let resp = ui.interact(wave, ui.id().with(("wave", id)), Sense::click_and_drag());
             let near = |pos: Pos2| -> Option<Handle> {
-                if lane.contains(pos) {
-                    return marks_now.iter().position(|&m| (to_x(m) - pos.x).abs() < 7.0).map(Handle::Slice);
-                }
                 if fade_band(pos) {
                     // The nearer of the two fades
                     return Some(if (fi - pos.x).abs() <= (fo - pos.x).abs() {
@@ -1004,7 +962,6 @@ impl LibraryUi {
                 }
                 match near(pos) {
                     Some(_) => ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal),
-                    None if lane.contains(pos) => ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair),
                     None => ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand),
                 }
                 // Scroll zooms around the mouse; sideways scroll pans
@@ -1037,13 +994,6 @@ impl LibraryUi {
                     Some(Handle::End) => e.edit.end = if t >= len - 1e-4 { 0.0 } else { t.max(ks + min_len) },
                     Some(Handle::FadeIn) => e.edit.fade_in = (t - ks).clamp(0.0, (ke - ks) * 0.9),
                     Some(Handle::FadeOut) => e.edit.fade_out = (ke - t).clamp(0.0, (ke - ks) * 0.9),
-                    Some(Handle::Slice(i)) => {
-                        let mut m = marks.clone();
-                        if let Some(x) = m.get_mut(i) {
-                            *x = t.clamp(ks + 0.002, ke - 0.002);
-                        }
-                        e.slices = m;
-                    }
                     Some(Handle::Pan) => {
                         let d = -resp.drag_delta().x / wave.width() * span;
                         self.view = (self.view.0 + d, self.view.1 + d);
@@ -1057,29 +1007,7 @@ impl LibraryUi {
             if resp.double_clicked() {
                 self.view = (0.0, len);
             } else if resp.clicked() {
-                let pos = resp.interact_pointer_pos().unwrap_or_default();
-                let t = to_t(pos.x);
-                if lane.contains(pos) {
-                    if t > ks + 0.002 && t < ke - 0.002 && near(pos).is_none() {
-                        self.checkpoint(&orig);
-                        e.slices.push(t);
-                    }
-                } else if chopped && t >= ks && t <= ke {
-                    // Click a slice to hear it
-                    if let Some(w) = edges(&e.edit, ks, ke, &marks).windows(2).find(|w| t >= w[0] && t < w[1]) {
-                        self.play(lib, id, Some((w[0], w[1])), out, now);
-                    }
-                } else {
-                    self.play(lib, id, None, out, now);
-                }
-            }
-            if resp.secondary_clicked() {
-                if let Some(Handle::Slice(i)) = resp.interact_pointer_pos().and_then(near) {
-                    self.checkpoint(&orig);
-                    let mut m = marks.clone();
-                    m.remove(i);
-                    e.slices = m;
-                }
+                self.play(lib, id, None, out, now);
             }
             if zoomed {
                 let oresp = ui.interact(over, ui.id().with(("over", id)), Sense::click_and_drag());
@@ -1173,9 +1101,8 @@ impl LibraryUi {
         ui.add_space(2.0);
         let gap = 10.0;
         let tw = ((inner.width() - gap * 4.0) / 5.0).max(80.0);
-        let th = (ui.available_height() - if chopped { 60.0 } else { 0.0 }).clamp(76.0, 104.0);
+        let th = ui.available_height().clamp(76.0, 104.0);
         let size = vec2(tw, th);
-        let mut hits = None;
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = gap;
             let ed = &mut e.edit;
@@ -1253,112 +1180,7 @@ impl LibraryUi {
                 self.checkpoint(&orig);
                 ed.reverse = !ed.reverse;
             }
-            let count = e.slices.len() + 1;
-            if action_button(
-                ui,
-                size,
-                Tile::Chop,
-                ph::GRID_FOUR,
-                "CHOP",
-                chopped,
-                if chopped { count as f32 } else { 3.0 },
-                col,
-            )
-            .on_hover_text(if chopped {
-                "Put it back together"
-            } else {
-                "Cut it at every hit – play the pieces as pads"
-            })
-            .clicked()
-            {
-                self.checkpoint(&orig);
-                hits = Some(if chopped { None } else { Some(self.sensitivity) });
-            }
         });
-        match hits {
-            Some(Some(sens)) => {
-                e.slices = library::transients(&src.data, ks, ke, sens);
-                if e.slices.is_empty() {
-                    self.say("No clear hits in this sound", now);
-                }
-            }
-            Some(None) => e.slices.clear(),
-            None => {}
-        }
-
-        // Slice pads: play them like a sampler, keep them as sounds
-        let mut refind = false;
-        if !e.slices.is_empty() {
-            let edges = edges(&e.edit, ks, ke, &e.slices);
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
-                for (i, w) in edges.windows(2).enumerate().take(16) {
-                    let (pr, resp) = ui.allocate_exact_size(vec2(42.0, 42.0), Sense::click());
-                    let hot = resp.hovered();
-                    let on = self
-                        .playing
-                        .as_ref()
-                        .is_some_and(|pl| pl.id == id && !pl.whole && (pl.from - w[0]).abs() < 1e-4);
-                    ui.painter().rect_filled(
-                        pr,
-                        10.0,
-                        mix(
-                            PANEL,
-                            col,
-                            if on {
-                                0.9
-                            } else if hot {
-                                0.45
-                            } else {
-                                0.22
-                            },
-                        ),
-                    );
-                    ui.painter().text(
-                        pr.center(),
-                        Align2::CENTER_CENTER,
-                        format!("{}", i + 1),
-                        bold(13.0),
-                        if on { BG } else { TEXT },
-                    );
-                    if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                        self.play(lib, id, Some((w[0], w[1])), out, now);
-                    }
-                }
-                ui.add_space(8.0);
-                if chip(ui, ph::MINUS, false, TEXT).on_hover_text("Fewer pieces").clicked() {
-                    self.sensitivity = (self.sensitivity - 0.12).max(0.0);
-                    refind = true;
-                }
-                if chip(ui, ph::PLUS, false, TEXT).on_hover_text("More pieces").clicked() {
-                    self.sensitivity = (self.sensitivity + 0.12).min(1.0);
-                    refind = true;
-                }
-                ui.add_space(8.0);
-                if chip(
-                    ui,
-                    &format!("{}  Keep {} pieces as sounds", ph::SCISSORS, edges.len() - 1),
-                    false,
-                    ACID,
-                )
-                .on_hover_text("Every piece becomes a sound of its own")
-                .clicked()
-                {
-                    for (i, w) in edges.windows(2).enumerate().rev() {
-                        let edit = Edit {
-                            start: w[0],
-                            end: w[1],
-                            fade_in: 0.0,
-                            fade_out: 0.005,
-                            ..e.edit
-                        };
-                        lib.add_cut(&e, format!("{} {}", e.name, i + 1), edit);
-                    }
-                    self.say(format!("{} new sounds below {}", edges.len() - 1, e.name), now);
-                }
-            });
-        }
-
         if save_now {
             e.draft = false;
             self.say(format!("Saved – {} is in your sounds", e.name), now);
@@ -1368,13 +1190,6 @@ impl LibraryUi {
             lib.remove(id);
             self.selected = None;
             return;
-        }
-        if refind {
-            self.checkpoint(&orig);
-            let found = library::transients(&src.data, ks, ke, self.sensitivity);
-            if !found.is_empty() {
-                e.slices = found;
-            }
         }
         if e != orig {
             if let Some(slot) = lib.get_mut(id) {
