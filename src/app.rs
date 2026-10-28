@@ -726,6 +726,35 @@ impl SolarumApp {
         }
     }
 
+    /// The sound value for a library sound: its slot, or a free one, or one no track plays any
+    /// more; with all eight in use the SOUNDS screen asks which to replace
+    pub fn use_sample(&mut self, id: u64, now: f64) -> Option<u8> {
+        if let Some(k) = self.sample_slots.iter().position(|&s| s == id) {
+            return Some(CUSTOM + k as u8);
+        }
+        let in_use = |k: usize| {
+            let on = |song: &Song| song.tracks.iter().any(|t| slot_of(t.sound) == Some(k));
+            on(&self.song) || self.slots.iter().flatten().any(on)
+        };
+        let free = self
+            .sample_slots
+            .iter()
+            .position(|&s| s == 0)
+            .or_else(|| (0..SAMPLE_SLOTS).find(|&k| !in_use(k)));
+        match free {
+            Some(k) => {
+                self.sample_slots[k] = id;
+                self.sync_samples();
+                Some(CUSTOM + k as u8)
+            }
+            None => {
+                self.say(format!("All {SAMPLE_SLOTS} of your sounds are playing – pick one to replace"), now);
+                self.lib_ui.ask_replace(id);
+                None
+            }
+        }
+    }
+
     /// Keep the engine's slots in step with the project's (and the edits in the library), and
     /// tracks only on sounds that belong to them
     fn sync_samples(&mut self) {
@@ -2529,6 +2558,7 @@ impl SolarumApp {
             let mut picked = None;
             let mut shaped = false;
             let mut open_library = false;
+            let mut picked_sample = None;
             egui::popup_below_widget(ui, popup, &sound, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
                 ui.set_min_width(170.0);
                 ui.label(
@@ -2544,21 +2574,22 @@ impl SolarumApp {
                         picked = Some(k as u8);
                     }
                 }
-                // Yours: the project's sounds for this track
-                let mine: Vec<(usize, String)> = (0..SAMPLE_SLOTS)
-                    .filter_map(|k| {
-                        let e = self.library.get(self.sample_slots[k])?;
-                        (e.voice == voice).then(|| (k, e.name.clone()))
-                    })
+                // Yours: every library sound of this track (picking one gives it a project slot)
+                let mine: Vec<(u64, String)> = self
+                    .library
+                    .entries
+                    .iter()
+                    .filter(|e| e.voice == voice)
+                    .map(|e| (e.id, e.name.clone()))
                     .collect();
                 ui.separator();
                 if !mine.is_empty() {
                     ui.label(egui::RichText::new("YOUR SOUNDS").font(bold(10.5)).color(FAINT));
-                    for (k, name) in mine {
-                        let sound = CUSTOM + k as u8;
+                    let now_id = slot_of(self.song.tracks[i].sound).map(|k| self.sample_slots[k]);
+                    for (id, name) in mine {
                         let text = egui::RichText::new(format!("{}  {name}", ph::WAVEFORM)).font(bold(13.0));
-                        if ui.selectable_label(self.song.tracks[i].sound == sound, text).clicked() {
-                            picked = Some(sound);
+                        if ui.selectable_label(now_id == Some(id), text).clicked() {
+                            picked_sample = Some(id);
                         }
                     }
                 }
@@ -2610,6 +2641,11 @@ impl SolarumApp {
             });
             if let Some(k) = picked {
                 self.set_sound(i, k, now);
+            }
+            if let Some(id) = picked_sample {
+                if let Some(sound) = self.use_sample(id, now) {
+                    self.set_sound(i, sound, now);
+                }
             }
             if open_library {
                 self.lib_ui.show_for(Some(voice));
@@ -3814,6 +3850,11 @@ impl SolarumApp {
                     }
                     LibOut::Assign(voice, k) => {
                         self.song.track_mut(voice).sound = CUSTOM + k as u8;
+                    }
+                    LibOut::Use(id) => {
+                        if let (Some(sound), Some(v)) = (self.use_sample(id, now), self.library.get(id).map(|e| e.voice)) {
+                            self.song.track_mut(v).sound = sound;
+                        }
                     }
                 }
             }

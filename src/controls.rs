@@ -241,7 +241,7 @@ pub fn filter_pad(ui: &mut Ui, pos: &mut f32, res: &mut f32, engine_pos: f32, wi
 }
 
 /// A card's frame and its label row; returns the picture area
-fn card(p: &egui::Painter, rect: Rect, label: &str, value: &str, color: Color32, hot: bool) -> Rect {
+pub fn card(p: &egui::Painter, rect: Rect, label: &str, value: &str, color: Color32, hot: bool) -> Rect {
     p.rect_filled(rect, 10.0, Color32::from_black_alpha(80));
     p.rect_stroke(
         rect,
@@ -262,7 +262,7 @@ fn card(p: &egui::Painter, rect: Rect, label: &str, value: &str, color: Color32,
 }
 
 /// Drag up or down (or scroll) to change a 0…1 value, double-click resets
-fn drag_value(ui: &Ui, resp: &mut Response, value: &mut f32, default: f32) {
+pub fn drag_value(ui: &Ui, resp: &mut Response, value: &mut f32, default: f32) {
     let mut v = *value;
     if resp.double_clicked() {
         v = default;
