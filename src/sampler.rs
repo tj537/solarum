@@ -10,6 +10,10 @@ pub const SAMPLE_SLOTS: usize = 8;
 /// Everything in the library is kept at this rate
 pub const SAMPLE_SR: f32 = 44_100.0;
 
+/// How loud your sounds play on each track (a normalized sound peaks at 0.89): about where the
+/// built-in sounds of the track peak
+pub const LEVEL: [f32; 8] = [0.62, 0.6, 0.6, 0.55, 0.5, 0.45, 0.6, 0.5];
+
 /// A sound ready to play: the edited audio (mono, `SAMPLE_SR`) and its pitch in semitones
 pub struct SampleBuf {
     pub data: Vec<f32>,

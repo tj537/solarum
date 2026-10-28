@@ -166,7 +166,6 @@ enum Tile {
     Reverse,
     Tone,
     Crush,
-    Trim,
     Chop,
 }
 
@@ -224,15 +223,6 @@ fn picture(p: &egui::Painter, r: Rect, tile: Tile, v: f32, col: Color32, t: f32)
                 let x = (x / hold).floor() * hold;
                 ((x * TAU * 1.5).sin() * 0.8 * steps).round() / steps
             });
-        }
-        // A sound with brackets closing in on it
-        Tile::Trim => {
-            let inner = Rect::from_min_max(r.min + vec2(r.width() * 0.22, 0.0), r.max - vec2(r.width() * 0.22, 0.0));
-            curve(p, r, faint, |x| (x * TAU * 10.0).sin() * 0.06);
-            curve(p, inner, s, |x| (x * TAU * 8.0).sin() * (-x * 4.0).exp() * 0.9);
-            for x in [inner.left(), inner.right()] {
-                p.line_segment([pos2(x, r.top()), pos2(x, r.bottom())], stroke(2.0, TEXT));
-            }
         }
         // Hits with cuts between them – as many as it finds
         Tile::Chop => {
@@ -366,6 +356,9 @@ impl LibraryUi {
                     let voice = self.filter.unwrap_or_else(|| library::guess_voice(&name));
                     let long = data.len() as f32 >= MAX_SECONDS * SAMPLE_SR - 1.0;
                     let id = lib.add(&name, voice, data);
+                    if paths.len() == 1 {
+                        lib.set_draft(id, true);
+                    }
                     self.select(id);
                     added += 1;
                     if long {
@@ -377,7 +370,7 @@ impl LibraryUi {
         }
         match (added, last_err) {
             (_, Some(e)) => self.say(e, now),
-            (1, None) => self.say("Imported – trimmed and levelled", now),
+            (1, None) => self.say("Cut it the way you like, then press Save", now),
             (n, None) if n > 1 => self.say(format!("Imported {n} sounds"), now),
             _ => {}
         }
@@ -459,7 +452,11 @@ impl LibraryUi {
             self.selected = None;
         }
         if self.selected.is_none() {
-            self.selected = lib.entries.iter().find(|e| self.filter.is_none_or(|v| e.voice == v)).map(|e| e.id);
+            self.selected = lib
+                .entries
+                .iter()
+                .find(|e| !e.draft && self.filter.is_none_or(|v| e.voice == v))
+                .map(|e| e.id);
         }
 
         // ── Top bar ──
@@ -550,7 +547,7 @@ impl LibraryUi {
                 self.filter = None;
             }
             for v in Voice::ALL {
-                let has = lib.entries.iter().any(|e| e.voice == v) || self.filter == Some(v);
+                let has = lib.entries.iter().any(|e| !e.draft && e.voice == v) || self.filter == Some(v);
                 if has && chip(ui, v.name(), self.filter == Some(v), track_color(v)).clicked() {
                     self.filter = if self.filter == Some(v) { None } else { Some(v) };
                 }
@@ -567,7 +564,7 @@ impl LibraryUi {
         let shown: Vec<u64> = lib
             .entries
             .iter()
-            .filter(|e| self.filter.is_none_or(|v| e.voice == v) && (q.is_empty() || e.name.to_lowercase().contains(&q)))
+            .filter(|e| !e.draft && self.filter.is_none_or(|v| e.voice == v) && (q.is_empty() || e.name.to_lowercase().contains(&q)))
             .map(|e| e.id)
             .collect();
         let list_h = (ui.available_height() - slots_h - 8.0).max(80.0);
@@ -761,7 +758,7 @@ impl LibraryUi {
                 self.checkpoint(&orig);
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if chip(ui, ph::TRASH, false, RED).on_hover_text("Delete").clicked() {
+                if !e.draft && chip(ui, ph::TRASH, false, RED).on_hover_text("Delete").clicked() {
                     self.confirm_delete = Some(id);
                 }
             });
@@ -1026,7 +1023,9 @@ impl LibraryUi {
         let a = self.view.0.clamp(0.0, (len - s).max(0.0));
         self.view = (a, a + s);
 
-        // ── Play, loop, use it ──
+        // ── Play, loop, save or use it ──
+        let mut save_now = false;
+        let mut discard = false;
         ui.horizontal(|ui| {
             let playing = self.playing.as_ref().is_some_and(|pl| pl.id == id && pl.whole);
             let (pr, presp) = ui.allocate_exact_size(vec2(46.0, 46.0), Sense::click());
@@ -1059,6 +1058,26 @@ impl LibraryUi {
                 }
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if e.draft {
+                    // New: Save puts it in the list on the left, Discard throws it away
+                    let g = ui.painter().layout_no_wrap(format!("{}  Save", ph::FLOPPY_DISK), bold(14.0), BG);
+                    let (br, bresp) = ui.allocate_exact_size(g.size() + vec2(44.0, 22.0), Sense::click());
+                    let hot = bresp.hovered();
+                    ui.painter()
+                        .rect_filled(br, br.height() / 2.0, if hot { Color32::WHITE } else { ACID });
+                    ui.painter().galley(br.center() - g.size() / 2.0, g, BG);
+                    if bresp
+                        .on_hover_text("Into your sounds on the left")
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .clicked()
+                    {
+                        save_now = true;
+                    }
+                    if chip(ui, &format!("{}  Discard", ph::X), false, RED).clicked() {
+                        discard = true;
+                    }
+                    return;
+                }
                 let slot = slots.iter().position(|&s| s == id);
                 let label = match slot {
                     Some(_) => format!("{}  Playing on {}", ph::CHECK, e.voice.name()),
@@ -1086,7 +1105,7 @@ impl LibraryUi {
         // ── What you can do to it: cards for values, buttons for actions (as in the sound section) ──
         ui.add_space(2.0);
         let gap = 10.0;
-        let tw = ((inner.width() - gap * 5.0) / 6.0).max(80.0);
+        let tw = ((inner.width() - gap * 4.0) / 5.0).max(80.0);
         let th = (ui.available_height() - if chopped { 60.0 } else { 0.0 }).clamp(76.0, 104.0);
         let size = vec2(tw, th);
         let mut hits = None;
@@ -1166,15 +1185,6 @@ impl LibraryUi {
             {
                 self.checkpoint(&orig);
                 ed.reverse = !ed.reverse;
-            }
-            if action_button(ui, size, Tile::Trim, ph::SCISSORS, "TRIM", false, 0.0, col)
-                .on_hover_text("Cut the silence before and after")
-                .clicked()
-            {
-                self.checkpoint(&orig);
-                let (a, b) = library::trim_points(&src.data);
-                ed.start = a;
-                ed.end = b;
             }
             let count = e.slices.len() + 1;
             if action_button(
@@ -1282,6 +1292,16 @@ impl LibraryUi {
             });
         }
 
+        if save_now {
+            e.draft = false;
+            self.say(format!("Saved – {} is in your sounds", e.name), now);
+        }
+        if discard {
+            self.stop(out);
+            lib.remove(id);
+            self.selected = None;
+            return;
+        }
         if refind {
             self.checkpoint(&orig);
             let found = library::transients(&src.data, ks, ke, self.sensitivity);
@@ -1363,7 +1383,7 @@ impl LibraryUi {
             let shown: Vec<u64> = lib
                 .entries
                 .iter()
-                .filter(|e| self.filter.is_none_or(|v| e.voice == v) && (q.is_empty() || e.name.to_lowercase().contains(&q)))
+                .filter(|e| !e.draft && self.filter.is_none_or(|v| e.voice == v) && (q.is_empty() || e.name.to_lowercase().contains(&q)))
                 .map(|e| e.id)
                 .collect();
             if let Some(i) = shown.iter().position(|&s| s == id) {
@@ -1461,9 +1481,10 @@ impl LibraryUi {
                                     let n = lib.entries.iter().filter(|e| e.name.starts_with("Recording")).count() + 1;
                                     let voice = self.filter.unwrap_or(Voice::Rim);
                                     let id = lib.add(&format!("Recording {n}"), voice, data);
+                                    lib.set_draft(id, true);
                                     self.selected = Some(id);
                                     self.record_panel = false;
-                                    self.say("Recorded – trimmed and levelled. Pick its track at the top.", now);
+                                    self.say("Recorded – pick its track, cut it, then press Save", now);
                                 }
                             }
                             None => match Recorder::start(self.input.as_deref()) {
@@ -1571,7 +1592,7 @@ impl LibraryUi {
                         lib.remove(id);
                         self.undo.retain(|u| u.id != id);
                         self.redo.retain(|u| u.id != id);
-                        self.selected = lib.entries.first().map(|e| e.id);
+                        self.selected = lib.entries.iter().find(|e| !e.draft).map(|e| e.id);
                         self.confirm_delete = None;
                     }
                     if ui.button("Cancel").clicked() {

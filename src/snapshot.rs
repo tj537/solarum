@@ -272,6 +272,16 @@ mod tests {
             app.lib_ui.select(lp);
         });
         render("sounds_empty", 1100.0, 700.0, |app| app.lib_ui.show_for(None));
+        // Just recorded: not in the list yet, Save puts it there
+        render("sounds_draft", 1100.0, 700.0, |app| {
+            let noise: Vec<f32> = (0..30_000)
+                .map(|i| (i as f32 * 0.02).sin() * (-(i as f32) / 9000.0).exp())
+                .collect();
+            let id = app.library.add("Recording 1", crate::song::Voice::Rim, noise);
+            app.library.set_draft(id, true);
+            app.lib_ui.show_for(None);
+            app.lib_ui.select(id);
+        });
         // Solari says hello as the computer comes on (render time is ~10 s)
         render("home", 1360.0, 860.0, |app| {
             app.home = true;

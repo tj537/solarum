@@ -2579,7 +2579,7 @@ impl SolarumApp {
                     .library
                     .entries
                     .iter()
-                    .filter(|e| e.voice == voice)
+                    .filter(|e| e.voice == voice && !e.draft)
                     .map(|e| (e.id, e.name.clone()))
                     .collect();
                 ui.separator();

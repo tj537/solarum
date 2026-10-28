@@ -1684,20 +1684,20 @@ impl Engine {
         let pitch = (self.song.root as i32 + note as i32 + self.transpose as i32 + track.tune as i32) as f32;
         let sound = track.sound;
         if let Some(k) = slot_of(sound) {
-            // One of your own sounds: drums play out (decay shortens them), bass and synth follow the notes
+            // One of your own sounds: it plays out like a one-shot (a decay below the middle
+            // shortens it); bass and synth follow the notes and the key (a sound counts as C)
             if let Some(buf) = self.samples[k].clone() {
+                let key = ((self.song.root as i32 - 36 + 6).rem_euclid(12) - 6) as f32;
                 let semis = track.tune as f32
                     + if voice.is_synth() {
-                        pitch - self.song.root as f32 - track.tune as f32
+                        key + pitch - self.song.root as f32 - track.tune as f32
                     } else {
                         0.0
                     };
                 let len = buf.data.len() as f32 * sr / crate::sampler::SAMPLE_SR;
-                let hold = if voice.is_synth() {
-                    Some(gate * decay.min(1.5))
-                } else {
-                    (decay < 1.0).then_some(len * decay)
-                };
+                let hold = (decay < 1.0).then_some(len * decay);
+                // Levelled to sit like the built-in sounds (a normalized sound is far louder)
+                let vel = vel * crate::sampler::LEVEL[voice.index()];
                 self.samplers[voice.index()].trigger(&buf, semis, vel, hold, sr);
                 if voice == Voice::Kick {
                     self.pump_env = 1.0;
@@ -1837,7 +1837,13 @@ impl Engine {
             ];
             let mut v = v;
             for (i, x) in v.iter_mut().enumerate().skip(1) {
-                *x += self.samplers[i].next() * vol[i] * pg;
+                // Bass and synth duck under the kick like their own sounds
+                let duck = match i {
+                    6 => 1.0 - duck * 0.7,
+                    7 => 1.0 - duck * 0.3,
+                    _ => 1.0,
+                };
+                *x += self.samplers[i].next() * vol[i] * pg * duck;
             }
             let (mut l, mut r) = (0.0f32, 0.0f32);
             let (mut dl, mut dr, mut rv) = (0.0f32, 0.0f32, 0.0f32);

@@ -73,6 +73,8 @@ pub struct Entry {
     pub slices: Vec<f32>,
     /// Unix seconds, for the newest-first list
     pub added: u64,
+    /// Just recorded or imported, not saved yet: not in the list (and gone at the next start)
+    pub draft: bool,
 }
 
 impl Default for Entry {
@@ -85,6 +87,7 @@ impl Default for Entry {
             edit: Edit::default(),
             slices: Vec::new(),
             added: 0,
+            draft: false,
         }
     }
 }
@@ -165,7 +168,19 @@ impl Library {
             }
         }
         lib.dir = Some(dir);
+        // Drafts nobody saved
+        let drafts: Vec<u64> = lib.entries.iter().filter(|e| e.draft).map(|e| e.id).collect();
+        for id in drafts {
+            lib.remove(id);
+        }
         lib
+    }
+
+    pub fn set_draft(&mut self, id: u64, draft: bool) {
+        if let Some(e) = self.get_mut(id) {
+            e.draft = draft;
+            self.save();
+        }
     }
 
     pub fn in_memory() -> Self {
@@ -230,6 +245,7 @@ impl Library {
                 edit,
                 slices: Vec::new(),
                 added: now_secs(),
+                draft: false,
             },
         );
         self.save();
@@ -250,6 +266,7 @@ impl Library {
                 edit,
                 slices: Vec::new(),
                 added: now_secs(),
+                draft: false,
             },
         );
         self.save();
