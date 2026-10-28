@@ -267,12 +267,13 @@ pub fn fx_button(
     } else if lit > 0.0 {
         glow_rect(p, rect, 12.0, color, 0.8 * lit);
     }
+    // Dark like the pads; lit in its colour
     let fill = if active {
         color
     } else if hot {
-        mix(PANEL_HI, color, 0.85 * lit)
+        mix(mix(PAD, PANEL_HI, 0.45), color, 0.85 * lit)
     } else {
-        mix(mix(PANEL, PANEL_HI, 0.5), color, 0.85 * lit)
+        mix(PAD, color, 0.85 * lit)
     };
     p.rect_filled(rect, 12.0, fill);
     p.rect_stroke(

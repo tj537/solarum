@@ -13,6 +13,8 @@ pub const LINE: Color32 = Color32::from_rgb(84, 84, 90);
 pub const TEXT: Color32 = Color32::from_rgb(240, 240, 243);
 pub const DIM: Color32 = Color32::from_rgb(180, 180, 187);
 pub const FAINT: Color32 = Color32::from_rgb(130, 130, 138);
+/// The dark inside of a pad, card or button (what black at 80/255 makes of the concrete)
+pub const PAD: Color32 = Color32::from_rgb(39, 39, 41);
 /// Deep space: the window in the middle and the visualizer
 pub const SPACE: Color32 = Color32::from_rgb(5, 6, 13);
 pub const RED: Color32 = Color32::from_rgb(255, 59, 70);

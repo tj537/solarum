@@ -82,6 +82,9 @@ fn fx_color(fx: Fx) -> Color32 {
     }
 }
 
+/// The gap between the controls in the right panel, across and down
+const GAP: f32 = 8.0;
+
 /// A seed from any text (FNV-1a), the same on every computer
 fn seed_of(text: &str) -> u64 {
     text.trim()
@@ -2677,29 +2680,47 @@ impl SolarumApp {
     /// The auto mode's settings, from SET in SOLAR OS: how often it changes
     /// something, and AUTO FX
     fn auto_settings(&mut self, ui: &mut Ui, now: f64) {
-        ui.set_min_width(220.0);
+        // SOLAR OS green, like the VIBE menu
+        ui.set_min_width(260.0);
+        let mono = egui::FontId::monospace;
         let bars = self.song.auto_bars;
         let title = if bars == 1 {
-            "CHANGE EVERY BAR".to_string()
+            "Change something every bar".to_string()
         } else {
-            format!("CHANGE EVERY {bars} BARS")
+            format!("Change something every {bars} bars")
         };
-        ui.label(egui::RichText::new(title).font(bold(10.5)).color(FAINT).extra_letter_spacing(1.2));
+        ui.label(egui::RichText::new(title).font(mono(12.0)).color(ACID));
+        ui.add_space(2.0);
         let all: Vec<u8> = (1..=16).collect();
-        if let Some(b) = widgets::stops(ui, &all, bars, 220.0, ACID) {
+        if let Some(b) = widgets::stops(ui, &all, bars, 250.0, ACID) {
             self.song.auto_bars = b;
         }
-        ui.separator();
+        ui.add_space(4.0);
         let fx = self.song.auto_fx;
-        if ui
-            .checkbox(&mut self.song.auto_fx, egui::RichText::new("AUTO FX").font(bold(12.5)))
+        let mut job = egui::text::LayoutJob::default();
+        let fmt = |font, color| egui::TextFormat {
+            font_id: font,
+            color,
+            ..Default::default()
+        };
+        job.append(&format!("> AUTO FX {}", if fx { "on" } else { "off" }), 0.0, fmt(mono(13.0), ACID));
+        job.append(
+            "   breaks, build-ups and drops by itself",
+            0.0,
+            fmt(mono(11.0), ACID.gamma_multiply(0.55)),
+        );
+        let toggled = ui.selectable_label(fx, job);
+        if toggled.clicked() {
+            self.song.auto_fx = !fx;
+        }
+        if toggled
             .on_hover_text(
                 "On: Solarum arranges by itself – the energy glides, breakdowns, build-ups with effects \
                  (low-pass, gate, echo) and drops. The energy shows in the log.\n\
                  Off: the energy bar is yours – low = break, 85 and up = everything, DROP drops. The auto mode \
                  still changes patterns, sounds and notes, but never takes a track out.",
             )
-            .changed()
+            .clicked()
         {
             if fx && self.song.auto {
                 // The bar decides now: everything Solarum took out comes back
@@ -2716,11 +2737,6 @@ impl SolarumApp {
                 now,
             );
         }
-        ui.label(
-            egui::RichText::new("Breakdowns, build-ups and drops by itself")
-                .font(body(11.0))
-                .color(FAINT),
-        );
     }
 
     /// The auto mode is the computer: SOLAR OS, the terminal under the mood. Off, its screen
@@ -2957,7 +2973,8 @@ impl SolarumApp {
         let tall = ui.available_height() > 740.0;
         // Room to breathe between the controls – less of it in a short window
         let air = if tall { 8.0 } else { 3.0 };
-        ui.spacing_mut().item_spacing.y = if tall { 10.0 } else { 8.0 };
+        // One gap between every control, across and down
+        ui.spacing_mut().item_spacing.y = GAP;
         // Nine knobs, always there: the sound, then pitch and the master's drive, then the EQ
         let caret = if self.sound_open { ph::CARET_DOWN } else { ph::CARET_RIGHT };
         let fold = ui
@@ -3040,20 +3057,20 @@ impl SolarumApp {
             };
             // Two by two: space and pump as faders with what they do, pitch on a keyboard,
             // drive as a wave – all dragged up or down
-            let cw = (w - 8.0) / 2.0;
+            let cw = (w - GAP) / 2.0;
             let mut space = m.space;
             let mut pump = m.pump;
             let mut semis = self.song.root - 36;
             let mut drive = self.song.eq.drive;
             ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 8.0;
+                ui.spacing_mut().item_spacing.x = GAP;
                 controls::space_card(ui, &mut space, dm.space, track_color(Voice::OpenHat), cw, card_h)
                     .on_hover_text("Space: reverb and echo on everything\nDrag up or down · double-click resets");
                 controls::pump_card(ui, &mut pump, dm.pump, track_color(Voice::Clap), cw, card_h)
                     .on_hover_text("Pump: everything ducks under the kick and breathes with it\nDrag up or down · double-click resets");
             });
             ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 8.0;
+                ui.spacing_mut().item_spacing.x = GAP;
                 controls::pitch_card(ui, &mut semis, 5, &pitch_text, track_color(Voice::Bass), cw, card_h).on_hover_text(
                     "Key: what key the whole song is in – bass and synth move with it, drums stay.\nThe planets' own notes are steps of the scale, so the melody stays the same.\nDrag along it · double-click resets",
                 );
@@ -3154,7 +3171,7 @@ impl SolarumApp {
             self.send(Cmd::FilterRes(self.filter_res));
         }
         // Effects: hold to use
-        let gap = 10.0;
+        let gap = GAP;
         // Two side by side, three rows
         let bw = (w - gap) / 2.0;
         for row in 0..3 {
@@ -3211,7 +3228,6 @@ impl SolarumApp {
             });
         }
         // The drop, right under the effects
-        ui.add_space(if tall { 6.0 } else { 3.0 });
         let (r, resp) = ui.allocate_exact_size(vec2(w, drop_h), Sense::click());
         let building = live.build;
         let p = ui.painter();
@@ -3236,9 +3252,9 @@ impl SolarumApp {
             if building.is_some() {
                 mix(mix(PANEL, RED, 0.3), RED, pulse * 0.5)
             } else if hot {
-                mix(PANEL, RED, 0.3)
+                mix(PAD, RED, 0.3)
             } else {
-                mix(PANEL, RED, 0.18)
+                mix(PAD, RED, 0.18)
             },
         );
         if let Some(b) = building {

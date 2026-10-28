@@ -515,7 +515,7 @@ impl Song {
             macros: Macros::default(),
             master: 0.8,
             auto: false,
-            auto_bars: 8,
+            auto_bars: 4,
             curve: true,
             auto_fx: true,
             prog: 0,
