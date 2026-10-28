@@ -3,7 +3,7 @@
 //! a little picture of each groove, settings and help
 
 use crate::file::SolarumFile;
-use crate::song::{Song, Vibe, Voice, STEPS, TRACKS};
+use crate::song::{Song, Voice, STEPS, TRACKS};
 use crate::theme::*;
 use crate::widgets::{fit_text, glow};
 use eframe::egui::{self, pos2, vec2, Align2, Color32, Rect, Sense, Ui};
@@ -25,8 +25,6 @@ pub enum Action {
     New,
     Continue,
     Open,
-    /// Let Solari play – in this vibe, or one it picks
-    Auto(Option<Vibe>),
     Recent(usize),
     Forget(usize),
     Settings,
@@ -95,51 +93,6 @@ pub fn preview(p: &egui::Painter, r: Rect, song: &Song, turn: f32) {
     p.circle_filled(c, rx * 0.045, mix(ACID, Color32::WHITE, 0.15));
 }
 
-/// "Let Solari play" as a little SOLAR OS screen: green on black, a monospace prompt, faint
-/// scanlines, Solari's face and a blinking cursor
-fn solari_button(ui: &mut Ui, r: Rect, t: f32) -> egui::Response {
-    let resp = ui.interact(r, ui.id().with("auto"), Sense::click());
-    let hot = resp.hovered();
-    let p = ui.painter().with_clip_rect(r);
-    p.rect_filled(r, 12.0, Color32::from_rgb(8, 11, 6));
-    let mut y = r.top() + 2.0;
-    while y < r.bottom() {
-        p.line_segment([pos2(r.left(), y), pos2(r.right(), y)], stroke(1.0, ACID.gamma_multiply(0.035)));
-        y += 3.0;
-    }
-    p.rect_stroke(
-        r,
-        12.0,
-        stroke(if hot { 1.6 } else { 1.0 }, ACID.gamma_multiply(if hot { 0.9 } else { 0.5 })),
-        egui::StrokeKind::Inside,
-    );
-    crate::log::robot(&p, pos2(r.left() + 28.0, r.center().y - 4.0), 20.0, if hot { t } else { 0.0 }, ACID);
-    let mono = |s: f32| egui::FontId::monospace(s);
-    p.text(
-        pos2(r.left() + 50.0, r.center().y - 9.0),
-        Align2::LEFT_CENTER,
-        "> Let Solari play",
-        mono(13.5),
-        ACID,
-    );
-    let galley = p.layout_no_wrap(
-        "  Pick a vibe – Solari builds a set".to_string(),
-        mono(10.5),
-        ACID.gamma_multiply(0.6),
-    );
-    let w = galley.size().x;
-    p.galley(pos2(r.left() + 50.0, r.center().y + 3.0), galley, ACID);
-    if (t * 0.8).fract() < 0.55 {
-        p.rect_filled(
-            Rect::from_min_size(pos2(r.left() + 52.0 + w, r.center().y + 4.0), vec2(6.0, 11.0)),
-            0.0,
-            ACID.gamma_multiply(0.8),
-        );
-    }
-    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
-}
-
-/// A short line about a groove: vibe, mood, tempo
 fn about(song: &Song) -> String {
     let mood = song.mood().map_or(String::new(), |k| format!(" · {}", crate::song::MOODS[k].0));
     format!("{}{mood} · {:.0} BPM", song.vibe.name(), song.bpm)
@@ -296,51 +249,8 @@ pub fn home(ui: &mut Ui, sounds: usize, recent: &[Recent], last: Option<(&Song, 
         }
         y += bh + gap;
     }
-    // Solari's button: a little SOLAR OS screen; a click offers a few vibes to start from
-    let solari_r = Rect::from_min_max(pos2(hero.left(), y), pos2(row_right, y + 62.0));
-    let solari = solari_button(ui, solari_r, t);
-    let popup = ui.make_persistent_id("solari_vibes");
-    if solari.clicked() {
-        ui.memory_mut(|m| m.toggle_popup(popup));
-    }
-    egui::popup_below_widget(ui, popup, &solari, egui::PopupCloseBehavior::CloseOnClick, |ui| {
-        ui.set_min_width(solari_r.width() - 16.0);
-        ui.label(
-            egui::RichText::new("What should Solari play?")
-                .font(egui::FontId::monospace(12.0))
-                .color(ACID),
-        );
-        ui.add_space(4.0);
-        let examples = [
-            (Some(Vibe::Hypnotic), "Hypnotic", "deep, rolling, one long trip"),
-            (Some(Vibe::Acid), "Acid", "a squelching 303 line"),
-            (Some(Vibe::Peak), "Peak time", "big room, hands up"),
-            (Some(Vibe::Dub), "Dub", "echoes, chords, space"),
-            (Some(Vibe::Melodic), "Melodic", "warm chords that move"),
-            (Some(Vibe::Hard), "Hard", "fast, loud, relentless"),
-            (None, "Surprise me", "Solari picks"),
-        ];
-        for (vibe, name, line) in examples {
-            let mut job = egui::text::LayoutJob::default();
-            let fmt = |font, color| egui::TextFormat {
-                font_id: font,
-                color,
-                ..Default::default()
-            };
-            job.append(&format!("> {name}"), 0.0, fmt(egui::FontId::monospace(13.0), ACID));
-            job.append(
-                &format!("   {line}"),
-                0.0,
-                fmt(egui::FontId::monospace(11.0), ACID.gamma_multiply(0.55)),
-            );
-            if ui.selectable_label(false, job).clicked() {
-                action = Some(Action::Auto(vibe));
-            }
-        }
-    });
-
     // Right under the buttons and the light – the more room below, the more projects show
-    let ry = (solari_r.bottom() + 56.0).max(sun.y + size * 0.5 + 24.0);
+    let ry = (y - gap + 56.0).max(sun.y + size * 0.5 + 24.0);
     p.text(
         pos2(content.left(), ry),
         Align2::LEFT_TOP,

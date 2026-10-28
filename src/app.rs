@@ -1024,7 +1024,7 @@ impl SolarumApp {
     fn home_action(&mut self, action: crate::home::Action, now: f64) {
         use crate::home::Action;
         // Leaving a project with changes that aren't saved: ask first
-        let leaves = matches!(action, Action::New | Action::Open | Action::Auto(_) | Action::Recent(_));
+        let leaves = matches!(action, Action::New | Action::Open | Action::Recent(_));
         if leaves && self.dirty() && self.pending.is_none() {
             self.pending = Some(action);
             return;
@@ -1043,16 +1043,6 @@ impl SolarumApp {
                 self.home = false;
             }
             Action::Open => self.open_file(None, now),
-            Action::Auto(vibe) => {
-                self.new_project();
-                if let Some(v) = vibe {
-                    self.song.vibe = v;
-                    let (lo, hi) = v.bpm();
-                    self.song.bpm = ((lo + hi) / 2.0).round();
-                }
-                self.home = false;
-                self.power(now);
-            }
             Action::Recent(i) => {
                 if let Some(path) = self.recent.get(i).cloned() {
                     self.open_file(Some(path), now);
@@ -1818,21 +1808,46 @@ impl SolarumApp {
     /// The vibes, for the terminal's VIBE button: a pick rolls a new groove in it
     fn vibe_list(&mut self, ui: &mut Ui, now: f64) {
         let vibe = self.song.vibe;
-        ui.set_min_width(300.0);
-        for v in Vibe::ALL {
-            let (lo, hi) = v.bpm();
+        ui.set_min_width(340.0);
+        ui.label(
+            egui::RichText::new("What should Solari play?")
+                .font(egui::FontId::monospace(12.0))
+                .color(ACID),
+        );
+        ui.add_space(4.0);
+        let fmt = |font, color| egui::TextFormat {
+            font_id: font,
+            color,
+            ..Default::default()
+        };
+        let mut picked = None;
+        for v in Vibe::ALL.into_iter().filter(|&v| v != Vibe::Custom) {
             let mut job = egui::text::LayoutJob::default();
-            let fmt = |font, color| egui::TextFormat {
-                font_id: font,
-                color,
-                ..Default::default()
-            };
-            job.append(v.name(), 0.0, fmt(bold(13.5), if v == vibe { ACID } else { TEXT }));
-            job.append(&format!("   {lo:.0}–{hi:.0} BPM"), 0.0, fmt(body(11.0), FAINT));
-            if ui.selectable_label(v == vibe, job).on_hover_text(v.blurb()).clicked() {
-                self.shuffle(v, now);
-                self.bunk(format!("{} it is. {}", v.name(), v.blurb()), now);
+            let on = v == vibe;
+            job.append(&format!("> {}", v.name()), 0.0, fmt(egui::FontId::monospace(13.0), ACID));
+            job.append(
+                &format!("   {}", v.blurb().to_lowercase()),
+                0.0,
+                fmt(egui::FontId::monospace(11.0), ACID.gamma_multiply(0.55)),
+            );
+            if ui.selectable_label(on, job).clicked() {
+                picked = Some(v);
             }
+        }
+        let mut job = egui::text::LayoutJob::default();
+        job.append("> Surprise me", 0.0, fmt(egui::FontId::monospace(13.0), ACID));
+        job.append(
+            "   Solari picks",
+            0.0,
+            fmt(egui::FontId::monospace(11.0), ACID.gamma_multiply(0.55)),
+        );
+        if ui.selectable_label(false, job).clicked() {
+            let all: Vec<Vibe> = Vibe::ALL.into_iter().filter(|&v| v != Vibe::Custom && v != vibe).collect();
+            picked = Some(*self.rng.pick(&all));
+        }
+        if let Some(v) = picked {
+            self.shuffle(v, now);
+            self.bunk(format!("{} it is. {}", v.name(), v.blurb()), now);
         }
     }
 

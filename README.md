@@ -140,7 +140,7 @@ All keys keep working, so <kbd>←</kbd> <kbd>→</kbd> take the set from break 
 
 ### Projects and settings
 
-- **Start screen:** Solarum opens on a start screen with *New project*, *Open…*, *Back to …* (the project that's open, or was last time), *Let Solari play* (pick a vibe first – Hypnotic, Acid, Peak time, Dub, Melodic, Hard – or let Solari choose), the green sun from the planets view, and your recent projects as cards with a little picture of each groove. The logo brings you back here.
+- **Start screen:** Solarum opens on a start screen with *New project*, *Open…*, *Sounds*, *Back to …* (the project that's open, or was last time), the green sun from the planets view, and your recent projects as cards with a little picture of each groove. The logo brings you back here.
 - **Projects:** a project is a single `.solarum` file (plain text) holding the groove, its twelve favorites with their names, and the sounds of yours it uses. *New project* starts without favorites. The top bar shows the project's name and a dot when it has unsaved changes, and leaving such a project asks whether to save. File → Save (⌘/Ctrl + S) writes to the project's file; Save as… asks where.
 - **Settings (the gear):** volume, sound output, MIDI keyboard, what happens at launch (wait or play – the auto mode is always off at the start), whether a shuffle keeps the tempo, facts and tips in the terminal, the legacy Radar view and the update check (Solarum asks GitHub once at launch whether there's a new version; you can switch that off), and at the bottom a card to support Solarum on [Ko-fi](https://ko-fi.com/tj537). Headphones and MIDI keyboards are picked up while Solarum runs. The LIVE heading folds the live controls away.
 
