@@ -75,6 +75,8 @@ pub struct LibraryUi {
     drawing: Option<library::Drawing>,
     draw_name: &'static str,
     pen: Option<(usize, f32)>,
+    /// Space this frame (taken before any button can see it)
+    space: bool,
     rng: crate::rng::Rng,
 }
 
@@ -104,6 +106,7 @@ impl Default for LibraryUi {
             drawing: None,
             draw_name: "Drawing",
             pen: None,
+            space: false,
             rng: crate::rng::Rng::from_clock(),
         }
     }
@@ -439,10 +442,10 @@ impl LibraryUi {
         });
     }
 
+    /// Silence – always sent, so a loop the screen lost track of stops too
     fn stop(&mut self, out: &mut Vec<Out>) {
-        if self.playing.take().is_some() {
-            out.push(Out::Audition(None, false));
-        }
+        self.playing = None;
+        out.push(Out::Audition(None, false));
     }
 
     fn toggle_play(&mut self, lib: &mut Library, id: u64, out: &mut Vec<Out>, now: f64) {
@@ -457,10 +460,18 @@ impl LibraryUi {
         let mut out = Vec::new();
         let full = ui.max_rect();
         let p = ui.painter().clone();
+        // Space plays – unless you're typing; a clicked button doesn't keep the keyboard
+        let typing = ui.ctx().wants_keyboard_input();
+        if !typing {
+            if let Some(f) = ui.memory(|m| m.focused()) {
+                ui.memory_mut(|m| m.surrender_focus(f));
+            }
+        }
+        self.space = !typing && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Space));
 
         // The audition: forget it once it's over; a looped sound follows the edit
         if let Some(pl) = &self.playing {
-            let over = playhead.is_none() && now - pl.since > 0.2 && !(self.looped && pl.whole);
+            let over = playhead.is_none() && now - pl.since > 0.2 && !self.looped;
             if over {
                 self.playing = None;
             } else if pl.whole && self.looped {
@@ -597,6 +608,7 @@ impl LibraryUi {
         ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
         // Filter by track: the track colours (only the tracks that have sounds)
         ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = vec2(10.0, 8.0);
             if chip(ui, "All", self.filter.is_none(), TEXT).clicked() {
                 self.filter = None;
             }
@@ -683,6 +695,7 @@ impl LibraryUi {
             if play.hovered() || playing { BG } else { TEXT },
         );
         if play.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+            self.drawing = None;
             self.selected = Some(id);
             self.toggle_play(lib, id, out, now);
         }
@@ -714,6 +727,9 @@ impl LibraryUi {
         }
         if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
             self.selected = Some(id);
+            if self.drawing.take().is_some() {
+                self.stop(out);
+            }
         }
     }
 
@@ -1455,9 +1471,10 @@ impl LibraryUi {
                 BG,
             );
             if presp
-                .on_hover_text("Hear it")
+                .on_hover_text("Hear it (Space)")
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .clicked()
+                || self.space
             {
                 if playing {
                     self.stop(out);
@@ -1539,9 +1556,12 @@ impl LibraryUi {
                 let v = ((pos.x - area.left()) / area.width()).clamp(0.0, 1.0);
                 d.length = 0.1 + v * 3.9;
             }
+            if resp.double_clicked() {
+                d.length = 1.0;
+            }
             picture(&p, area, Tile::Length, ((d.length - 0.1) / 3.9).clamp(0.0, 1.0), col, 0.0);
             let resp = resp
-                .on_hover_text("Click or drag: shorter to the left, longer to the right")
+                .on_hover_text("Click or drag: shorter to the left, longer to the right · double-click: 1 s")
                 .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
             if resp.drag_stopped() || resp.clicked() {
                 play = true;
@@ -1593,7 +1613,7 @@ impl LibraryUi {
     }
 
     fn keys(&mut self, ui: &mut Ui, lib: &mut Library, out: &mut Vec<Out>, now: f64) {
-        if ui.memory(|m| m.focused().is_some()) {
+        if ui.ctx().wants_keyboard_input() {
             if ui.input(|i| i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::Enter)) {
                 ui.memory_mut(|m| m.request_focus(egui::Id::NULL));
             }
@@ -1602,7 +1622,7 @@ impl LibraryUi {
         let (space, esc, undo, redo, del, up, down) = ui.input_mut(|i| {
             let cmd = i.modifiers.command;
             (
-                i.consume_key(egui::Modifiers::NONE, egui::Key::Space),
+                self.space,
                 i.key_pressed(egui::Key::Escape),
                 cmd && !i.modifiers.shift && i.key_pressed(egui::Key::Z),
                 cmd && i.modifiers.shift && i.key_pressed(egui::Key::Z),

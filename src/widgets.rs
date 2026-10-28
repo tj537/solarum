@@ -19,10 +19,9 @@ pub fn glow_rect(p: &egui::Painter, r: Rect, radius: f32, color: Color32, streng
     if strength <= 0.01 {
         return;
     }
-    for i in 1..=5 {
-        let k = i as f32;
-        p.rect_filled(r.expand(k * 3.0), radius + k * 3.0, alpha(color, strength * 0.07 * (6.0 - k) / 5.0));
-    }
+    // One soft blurred shadow in the colour – no rings
+    let c = color.gamma_multiply((strength * 0.35).min(0.6));
+    p.add(egui::epaint::RectShape::filled(r.expand(3.0), radius + 3.0, c).with_blur_width(18.0));
 }
 
 /// Arc as a polyline from angle `a0` to `a1` (radians, 0 = right, clockwise on screen)
