@@ -266,6 +266,8 @@ mod tests {
             let e = lib.get_mut(lp).unwrap();
             e.slices = crate::library::transients(&src.data, 0.0, 0.0, 0.5);
             e.edit.low_cut = 180.0;
+            e.edit.pitch = 5.0;
+            e.edit.reverse = true;
             app.sample_slots[0] = k;
             app.sample_slots[1] = lp;
             app.lib_ui.show_for(None);

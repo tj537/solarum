@@ -77,6 +77,8 @@ pub struct LibraryUi {
     pen: Option<(usize, f32)>,
     /// Space this frame (taken before any button can see it)
     space: bool,
+    /// The edited sound as a waveform, for the buffer it was made from
+    shown: Option<(Arc<SampleBuf>, Arc<Source>)>,
     rng: crate::rng::Rng,
 }
 
@@ -107,6 +109,7 @@ impl Default for LibraryUi {
             draw_name: "Drawing",
             pen: None,
             space: false,
+            shown: None,
             rng: crate::rng::Rng::from_clock(),
         }
     }
@@ -856,9 +859,26 @@ impl LibraryUi {
             pos2(to_x(ks).max(wave.left()), wave.top()),
             pos2(to_x(ke).min(wave.right()), wave.bottom()),
         );
+        // Inside the cut: the sound as it plays – reversed, filtered, crushed, levelled, and
+        // squeezed or stretched by its pitch – so every turn of a card shows
+        let ratio = 2f32.powf(-e.edit.pitch / 12.0);
+        let shown_end = ks + (ke - ks) * ratio;
         if kr.width() > 0.0 {
             clip.rect_filled(kr, 0.0, mix(SPACE, col, 0.07));
-            draw_wave(&clip.with_clip_rect(kr), wave, &src, v0, v1, col);
+            match self.rendered_source(lib, id) {
+                Some(rs) => {
+                    let sr = Rect::from_min_max(pos2(to_x(ks), wave.top()), pos2(to_x(shown_end), wave.bottom()));
+                    let vis = sr.intersect(wave);
+                    if vis.width() > 0.5 {
+                        // Only the columns in view
+                        let len_r = rs.seconds();
+                        let f0 = (vis.left() - sr.left()) / sr.width().max(1e-3) * len_r;
+                        let f1 = (vis.right() - sr.left()) / sr.width().max(1e-3) * len_r;
+                        draw_wave(&clip.with_clip_rect(kr.union(vis)), vis, &rs, f0, f1, col);
+                    }
+                }
+                None => draw_wave(&clip.with_clip_rect(kr), wave, &src, v0, v1, col),
+            }
         }
         // Fades as lines from the corners, with a dot to grab
         let fi = to_x(ks + e.edit.fade_in);
@@ -911,7 +931,14 @@ impl LibraryUi {
         if let (Some(pl), Some(pos)) = (&self.playing, playhead) {
             if pl.id == id {
                 let dt = pos as f32 / SAMPLE_SR;
-                let t = if pl.reverse { pl.to - dt } else { pl.from + dt };
+                // The whole sound is drawn as it plays (reversed, pitched); a slice on the source
+                let t = if pl.whole {
+                    pl.from + dt * ratio
+                } else if pl.reverse {
+                    pl.to - dt
+                } else {
+                    pl.from + dt
+                };
                 let x = to_x(t);
                 if (wave.left()..=wave.right()).contains(&x) {
                     clip.line_segment([pos2(x, wave.top()), pos2(x, wave.bottom())], stroke(1.5, ACID));
@@ -921,7 +948,7 @@ impl LibraryUi {
         p.text(
             wave.right_bottom() + vec2(-12.0, -10.0),
             Align2::RIGHT_BOTTOM,
-            fmt_secs(ke - ks),
+            fmt_secs((ke - ks) * ratio),
             bold(12.0),
             alpha(TEXT, 0.7),
         );
@@ -1590,6 +1617,19 @@ impl LibraryUi {
             });
         }
         self.drawing = Some(d);
+    }
+
+    /// The sound as it plays, ready to draw (made again only when the edit changed)
+    fn rendered_source(&mut self, lib: &mut Library, id: u64) -> Option<Arc<Source>> {
+        let buf = lib.sound(id)?;
+        if let Some((b, src)) = &self.shown {
+            if Arc::ptr_eq(b, &buf) {
+                return Some(src.clone());
+            }
+        }
+        let src = Arc::new(Source::new(buf.data.clone()));
+        self.shown = Some((buf, src.clone()));
+        Some(src)
     }
 
     fn undo_step(&mut self, lib: &mut Library) {
