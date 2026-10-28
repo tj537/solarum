@@ -7,6 +7,7 @@ use crate::song::Voice;
 use crate::synth::Svf;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::f32::consts::TAU;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -505,6 +506,127 @@ pub fn guess_voice(name: &str) -> Voice {
     }
 }
 
+// ───────────────────────────── Drawn sounds ─────────────────────────────
+
+/// Columns of a drawing: left to right is time
+pub const DRAW_COLUMNS: usize = 256;
+
+/// A sound drawn by hand: in every column the pitch (0 = low … 1 = high) or nothing (silence)
+#[derive(Clone, PartialEq)]
+pub struct Drawing {
+    pub pitch: Vec<Option<f32>>,
+    /// 0 = soft (a sine with a little overtone), 1 = bright (a saw), 2 = air (filtered noise)
+    pub wave: u8,
+    /// Seconds
+    pub length: f32,
+}
+
+impl Default for Drawing {
+    fn default() -> Self {
+        Drawing {
+            pitch: vec![None; DRAW_COLUMNS],
+            wave: 0,
+            length: 1.0,
+        }
+    }
+}
+
+/// The frequency a height in the drawing stands for: 40 Hz at the bottom, about 5 kHz on top
+pub fn drawn_hz(p: f32) -> f32 {
+    40.0 * 2f32.powf(p.clamp(0.0, 1.0) * 7.0)
+}
+
+/// Turn a drawing into audio: the line is the pitch, gaps are silence, every edge softened
+pub fn render_drawing(d: &Drawing) -> Vec<f32> {
+    let sr = SAMPLE_SR;
+    let n = (d.length.clamp(0.05, MAX_SECONDS) * sr) as usize;
+    let cols = d.pitch.len().max(1);
+    let glide = 1.0 - (-1.0 / (0.004 * sr)).exp();
+    let fade = 1.0 - (-1.0 / (0.006 * sr)).exp();
+    let (mut hz, mut amp, mut phase) = (0.0f32, 0.0f32, 0.0f32);
+    let mut bp = Svf::new(1000.0, 4.0, sr);
+    let mut rng = crate::rng::Rng::new(7);
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        let c = (i * cols / n).min(cols - 1);
+        let (want_hz, want_amp) = match d.pitch[c] {
+            Some(p) => (drawn_hz(p), 1.0),
+            None => (hz, 0.0),
+        };
+        if hz == 0.0 {
+            hz = want_hz;
+        }
+        hz += (want_hz - hz) * glide;
+        amp += (want_amp - amp) * fade;
+        phase = (phase + hz / sr) % 1.0;
+        let x = match d.wave {
+            1 => (2.0 * phase - 1.0) * 0.6,
+            2 => {
+                bp.set(hz.clamp(60.0, 12_000.0), 5.0, sr);
+                bp.run(rng.noise()).bp * 2.5
+            }
+            _ => (phase * TAU).sin() + (phase * TAU * 2.0).sin() * 0.25,
+        };
+        out.push(crate::synth::sat(x * amp * 0.8));
+    }
+    out
+}
+
+/// A random space sound as a drawing (to play with): a laser, a riser, a wobble, a call or
+/// a melody of dots; and a name for it
+pub fn surprise(rng: &mut crate::rng::Rng) -> (Drawing, &'static str) {
+    let n = DRAW_COLUMNS;
+    let x = |i: usize| i as f32 / n as f32;
+    let kind = rng.below(5);
+    let (a, b) = (rng.f32(), rng.f32());
+    let pitch: Vec<Option<f32>> = match kind {
+        // Laser: a fast fall
+        0 => (0..n).map(|i| Some(0.95 - x(i).powf(0.4) * (0.6 + a * 0.3))).collect(),
+        // Riser: up and up
+        1 => (0..n).map(|i| Some(0.15 + x(i).powi(2) * (0.6 + a * 0.25))).collect(),
+        // Wobble: an alien voice going round
+        2 => (0..n)
+            .map(|i| Some(0.45 + a * 0.2 + (x(i) * TAU * (3.0 + b * 6.0)).sin() * 0.12))
+            .collect(),
+        // Call: two notes back and forth with gaps
+        3 => (0..n)
+            .map(|i| {
+                let k = (x(i) * 6.0) as usize;
+                let on = (x(i) * 6.0).fract() < 0.7;
+                on.then_some(if k.is_multiple_of(2) { 0.55 + a * 0.2 } else { 0.4 + b * 0.2 })
+            })
+            .collect(),
+        // Dots: a little melody of blips
+        _ => {
+            let notes: Vec<f32> = (0..8).map(|_| 0.35 + rng.f32() * 0.5).collect();
+            (0..n)
+                .map(|i| {
+                    let k = (x(i) * 8.0) as usize;
+                    ((x(i) * 8.0).fract() < 0.45).then_some(notes[k.min(7)])
+                })
+                .collect()
+        }
+    };
+    let wave = match kind {
+        2 => *rng.pick(&[0u8, 2]),
+        1 => *rng.pick(&[1u8, 2]),
+        _ => rng.below(2) as u8,
+    };
+    let length = match kind {
+        0 => 0.3 + a * 0.4,
+        1 => 1.5 + b * 1.5,
+        _ => 0.8 + a * 1.2,
+    };
+    let names = [
+        &["Laser", "Ray gun", "Shooting star"][..],
+        &["Lift-off", "Warp", "Re-entry"],
+        &["Alien", "UFO", "Wobble"],
+        &["Signal", "Mayday", "First contact"],
+        &["Morse", "Satellite song", "Beeps"],
+    ];
+    (Drawing { pitch, wave, length }, *rng.pick(names[kind as usize]))
+}
+
 // ───────────────────────────── Files ─────────────────────────────
 
 /// Any audio file → mono at `SAMPLE_SR`, at most `MAX_SECONDS`
@@ -816,6 +938,26 @@ mod tests {
         other.unpack(&p);
         assert_eq!(other.get(id).map(|e| e.name.as_str()), Some("Kick me"));
         assert!(other.sound(id).is_some_and(|b| !b.data.is_empty()));
+    }
+
+    #[test]
+    fn drawings_sound_and_gaps_are_silent() {
+        let mut d = Drawing::default();
+        for p in d.pitch.iter_mut().take(DRAW_COLUMNS / 2) {
+            *p = Some(0.5);
+        }
+        let x = render_drawing(&d);
+        assert_eq!(x.len(), SAMPLE_SR as usize);
+        let half = x.len() / 2;
+        assert!(x[..half - 1000].iter().any(|s| s.abs() > 0.3));
+        assert!(x[half + 2000..].iter().all(|s| s.abs() < 1e-3));
+        let mut rng = crate::rng::Rng::new(1);
+        for _ in 0..20 {
+            let (d, name) = surprise(&mut rng);
+            let x = render_drawing(&d);
+            assert!(!name.is_empty() && x.iter().all(|s| s.is_finite() && s.abs() <= 1.0));
+            assert!(x.iter().any(|s| s.abs() > 0.05), "{name} is silent");
+        }
     }
 
     #[test]

@@ -67,14 +67,25 @@ impl Voice {
     /// default, so saved songs from before sounds existed play as they did.
     pub fn sounds(self) -> &'static [&'static str] {
         match self {
-            Voice::Kick => &["909", "808", "Hard", "Deep", "Punch", "Rumble", "Distort"],
-            Voice::Clap => &["Clap", "Snare", "Big clap", "Snap", "Noise", "Lo-fi"],
-            Voice::Rim => &["Rim", "Cowbell", "Clave", "Tom", "Blip", "Conga", "Zap"],
-            Voice::Hat => &["909", "808", "Shaker", "Tick", "Metal", "Crisp"],
-            Voice::OpenHat => &["909", "808", "Sizzle", "Long", "Metal"],
-            Voice::Ride => &["Ride", "Bell", "Dark", "Crash", "Shimmer"],
-            Voice::Bass => &["Rolling", "Sub", "Reese", "Pulse", "Donk", "FM", "Growl"],
-            Voice::Acid => &["303 saw", "303 square", "Stab", "Pluck", "Hoover", "Pad", "Organ", "Supersaw"],
+            // Built-in sounds by what they feel like in space (`synth.rs` and `gen.rs` list their
+            // makings in the same order: 909, 808, hard, deep, punch, rumble, distort …)
+            Voice::Kick => &["Pulsar", "Gravity", "Impact", "Abyss", "Meteor", "Core", "Supernova"],
+            Voice::Clap => &["Flare", "Comet", "Solar wind", "Spark", "Static", "Old signal"],
+            Voice::Rim => &["Ping", "Beacon", "Probe", "Crater", "Sonar", "Moon drum", "Laser"],
+            Voice::Hat => &["Stardust", "Ion", "Asteroids", "Quartz", "Satellite", "Frost"],
+            Voice::OpenHat => &["Nebula", "Aurora", "Plasma", "Tail", "Ring"],
+            Voice::Ride => &["Orbit", "Halo", "Eclipse", "Big Bang", "Milky Way"],
+            Voice::Bass => &["Rover", "Deep field", "Wormhole", "Quasar", "Bounce", "Magnetar", "Black hole"],
+            Voice::Acid => &[
+                "Acid rain",
+                "Acid moon",
+                "Starlight",
+                "Constellation",
+                "Mothership",
+                "Cosmos",
+                "Cathedral",
+                "Hyperdrive",
+            ],
         }
     }
 
