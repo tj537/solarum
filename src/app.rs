@@ -203,7 +203,6 @@ pub struct SolarumApp {
     pub visual: bool,
     /// …and it's the face, not the lights
     pub face: bool,
-    last_preview: f64,
     /// Solo: the soloed track and everyone's mute state before
     solo: Option<(usize, [bool; TRACKS])>,
     /// Play this track once the engine has the new song (sound preview)
@@ -425,7 +424,6 @@ impl SolarumApp {
             visual: false,
             face: false,
             settings: false,
-            last_preview: -1.0,
             solo: None,
             preview: None,
             update_rx: None,
@@ -2556,8 +2554,6 @@ impl SolarumApp {
                 ui.memory_mut(|m| m.toggle_popup(popup));
             }
             let mut picked = None;
-            let mut shaped = false;
-            let mut open_library = false;
             let mut picked_sample = None;
             egui::popup_below_widget(ui, popup, &sound, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
                 ui.set_min_width(170.0);
@@ -2582,8 +2578,8 @@ impl SolarumApp {
                     .filter(|e| e.voice == voice && !e.draft)
                     .map(|e| (e.id, e.name.clone()))
                     .collect();
-                ui.separator();
                 if !mine.is_empty() {
+                    ui.separator();
                     ui.label(egui::RichText::new("YOUR SOUNDS").font(bold(10.5)).color(FAINT));
                     let now_id = slot_of(self.song.tracks[i].sound).map(|k| self.sample_slots[k]);
                     for (id, name) in mine {
@@ -2593,51 +2589,6 @@ impl SolarumApp {
                         }
                     }
                 }
-                if ui
-                    .button(egui::RichText::new(format!("{}  Your sounds…", ph::FOLDER_SIMPLE_PLUS)).font(bold(12.0)))
-                    .on_hover_text("Record, import and cut your own – up to 8 in a project")
-                    .clicked()
-                {
-                    open_library = true;
-                    ui.close_menu();
-                }
-                ui.separator();
-                // Tune and decay: shape the sound
-                let t = &mut self.song.tracks[i];
-                let mut tune = (t.tune as f32 + 12.0) / 24.0;
-                let mut decay = t.decay;
-                for (label, v, text, tip) in [
-                    (
-                        "Tune",
-                        &mut tune,
-                        format!("{:+}", t.tune),
-                        "Pitch in semitones (double-click: reset)",
-                    ),
-                    (
-                        "Decay",
-                        &mut decay,
-                        format!("{:.1}×", t.decay_factor()),
-                        "Shorter or longer (double-click: reset)",
-                    ),
-                ] {
-                    ui.horizontal(|ui| {
-                        ui.add_sized(
-                            vec2(44.0, 16.0),
-                            egui::Label::new(egui::RichText::new(label).font(body(12.0)).color(DIM)),
-                        );
-                        let r = widgets::bar_slider(ui, v, 86.0, color).on_hover_text(tip);
-                        if r.double_clicked() {
-                            *v = 0.5;
-                        }
-                        ui.label(egui::RichText::new(text).font(bold(11.0)).color(TEXT));
-                    });
-                }
-                let new_tune = (tune * 24.0 - 12.0).round() as i8;
-                if new_tune != t.tune || (decay - t.decay).abs() > 1e-4 {
-                    t.tune = new_tune;
-                    t.decay = decay;
-                    shaped = true;
-                }
             });
             if let Some(k) = picked {
                 self.set_sound(i, k, now);
@@ -2646,14 +2597,6 @@ impl SolarumApp {
                 if let Some(sound) = self.use_sample(id, now) {
                     self.set_sound(i, sound, now);
                 }
-            }
-            if open_library {
-                self.lib_ui.show_for(Some(voice));
-            }
-            // Hear the change while stopped (not more often than every 150 ms)
-            if shaped && !self.playing() && now - self.last_preview > 0.15 {
-                self.last_preview = now;
-                self.preview = Some(voice);
             }
             // Shaped sounds show it on the pill
             let t = &self.song.tracks[i];

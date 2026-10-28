@@ -538,7 +538,6 @@ impl LibraryUi {
         let p = ui.painter().clone();
         p.rect_filled(r, 14.0, mix(BG, PANEL, 0.6));
         let inner = r.shrink(12.0);
-        let slots_h = 64.0;
         let mut ui = ui.new_child(UiBuilder::new().max_rect(inner).layout(egui::Layout::top_down(egui::Align::Min)));
         ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
         // Filter by track: the track colours (only the tracks that have sounds)
@@ -567,7 +566,7 @@ impl LibraryUi {
             .filter(|e| !e.draft && self.filter.is_none_or(|v| e.voice == v) && (q.is_empty() || e.name.to_lowercase().contains(&q)))
             .map(|e| e.id)
             .collect();
-        let list_h = (ui.available_height() - slots_h - 8.0).max(80.0);
+        let list_h = ui.available_height().max(80.0);
         egui::ScrollArea::vertical()
             .max_height(list_h)
             .min_scrolled_height(list_h)
@@ -589,48 +588,6 @@ impl LibraryUi {
                     self.row(ui, lib, slots, *id, out, now);
                 }
             });
-
-        // The project's eight slots as a row of lights
-        let sr = Rect::from_min_max(pos2(inner.left(), inner.bottom() - slots_h), inner.max);
-        let used = slots.iter().filter(|&&s| s != 0).count();
-        p.text(
-            sr.left_top(),
-            Align2::LEFT_TOP,
-            format!("IN THIS PROJECT  {used} / {SAMPLE_SLOTS}"),
-            bold(10.5),
-            FAINT,
-        );
-        let d = ((sr.width() - 7.0 * 6.0) / 8.0).min(34.0);
-        for (k, slot) in slots.iter_mut().enumerate() {
-            let c = pos2(sr.left() + d / 2.0 + k as f32 * (d + 6.0), sr.top() + 22.0 + d / 2.0);
-            let rr = Rect::from_center_size(c, vec2(d, d));
-            let resp = ui.interact(rr, ui.id().with(("slot", k)), Sense::click());
-            match lib.get(*slot) {
-                Some(e) => {
-                    let col = track_color(e.voice);
-                    let sel = self.selected == Some(e.id);
-                    p.circle_filled(c, d / 2.0, if sel { col } else { mix(PANEL, col, 0.55) });
-                    p.text(c, Align2::CENTER_CENTER, format!("{}", k + 1), bold(11.0), BG);
-                    let id = e.id;
-                    let resp = resp
-                        .on_hover_text(format!("{} · {} (right-click: remove)", e.name, e.voice.name()))
-                        .on_hover_cursor(egui::CursorIcon::PointingHand);
-                    if resp.clicked() {
-                        self.selected = Some(id);
-                        self.play(lib, id, None, out, now);
-                    }
-                    resp.context_menu(|ui| {
-                        if ui.button(format!("{}  Remove from the project", ph::X)).clicked() {
-                            *slot = 0;
-                            ui.close_menu();
-                        }
-                    });
-                }
-                None => {
-                    p.circle_stroke(c, d / 2.0 - 1.0, stroke(1.0, alpha(LINE, 0.8)));
-                }
-            }
-        }
     }
 
     fn row(&mut self, ui: &mut Ui, lib: &mut Library, slots: &SlotIds, id: u64, out: &mut Vec<Out>, now: f64) {
@@ -696,10 +653,9 @@ impl LibraryUi {
             let (a, b) = kept(src, &e.edit);
             draw_wave(p, wr, src, a, b, alpha(col, 0.8));
         }
-        if let Some(k) = slots.iter().position(|&s| s == id) {
-            let c = pos2(r.right() - 10.0, r.top() + 10.0);
-            p.circle_filled(c, 8.0, col);
-            p.text(c, Align2::CENTER_CENTER, format!("{}", k + 1), bold(9.5), BG);
+        // In this project: a small light
+        if slots.contains(&id) {
+            p.circle_filled(pos2(r.right() - 9.0, r.top() + 9.0), 4.0, col);
         }
         if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
             self.selected = Some(id);
@@ -1090,10 +1046,7 @@ impl LibraryUi {
                     .rect_filled(br, br.height() / 2.0, if hot { Color32::WHITE } else { ACID });
                 ui.painter().galley(br.center() - g.size() / 2.0, g, BG);
                 if bresp
-                    .on_hover_text(format!(
-                        "Puts it on the {} track – a project holds {SAMPLE_SLOTS} of your sounds",
-                        e.voice.name()
-                    ))
+                    .on_hover_text(format!("Puts it on the {} track", e.voice.name()))
                     .on_hover_cursor(egui::CursorIcon::PointingHand)
                     .clicked()
                 {

@@ -5,8 +5,9 @@ use std::sync::Arc;
 
 /// `Track::sound` from here on is one of the project's sample slots
 pub const CUSTOM: u8 = 200;
-/// How many of your own sounds a project can use at once
-pub const SAMPLE_SLOTS: usize = 8;
+/// How many of your own sounds a project can use at once (more than anyone needs; the most
+/// serde and `Default` handle as an array)
+pub const SAMPLE_SLOTS: usize = 32;
 /// Everything in the library is kept at this rate
 pub const SAMPLE_SR: f32 = 44_100.0;
 
@@ -151,7 +152,7 @@ mod tests {
     fn slots_are_the_custom_range() {
         assert_eq!(slot_of(0), None);
         assert_eq!(slot_of(CUSTOM), Some(0));
-        assert_eq!(slot_of(CUSTOM + 7), Some(7));
-        assert_eq!(slot_of(CUSTOM + 8), None);
+        assert_eq!(slot_of(CUSTOM + 31), Some(31));
+        assert_eq!(slot_of(CUSTOM + 32), None);
     }
 }
