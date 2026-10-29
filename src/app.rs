@@ -30,8 +30,6 @@ use std::sync::Arc;
 pub const SLOTS: usize = 12;
 const UNDO_LIMIT: usize = 60;
 const FX_KEYS: [Key; 6] = [Key::Q, Key::W, Key::E, Key::X, Key::C, Key::V];
-/// A press of an effect shorter than this is a tap: it locks the effect on (or off again)
-const FX_TAP: f64 = 0.25;
 
 /// A stored song (undo step, saved slot) with the current volume and auto-mode settings –
 /// those belong to the moment, not to the groove
@@ -161,11 +159,9 @@ pub struct SolarumApp {
     step_time: f64,
     /// What Solarum says, where the auto mode is, lines from the ship (under the mood)
     pub log: crate::log::Log,
-    pub(crate) filter: f32,
+    filter: f32,
     /// The filter pad's resonance (springs back with it)
     filter_res: f32,
-    /// The filter stays where it is instead of springing back (double-click on the pad)
-    pub(crate) filter_lock: bool,
     /// Live effects held with the keyboard / the mouse, and what the engine was told
     pub fx_key: [bool; 6],
     /// Each effect picture's own clock (it only runs on hover or while the effect is on),
@@ -175,11 +171,6 @@ pub struct SolarumApp {
     fx_was_on: [bool; 6],
     fx_mouse: [bool; 6],
     fx_sent: [bool; 6],
-    /// Effects tapped on: they stay on until the next tap; whether each was held last frame
-    /// and since when (a short press is a tap)
-    pub(crate) fx_latch: [bool; 6],
-    fx_held: [bool; 6],
-    fx_down_at: [f64; 6],
     key_down: [bool; TRACKS],
     export: Export,
     /// `Cmd::Song`s sent to this engine – its songs carry how many it had seen
@@ -412,16 +403,12 @@ impl SolarumApp {
             },
             filter: 0.0,
             filter_res: 0.0,
-            filter_lock: false,
             fx_key: [false; 6],
             fx_phase: [0.0; 6],
             fx_pressed_at: [-10.0; 6],
             fx_was_on: [false; 6],
             fx_mouse: [false; 6],
             fx_sent: [false; 6],
-            fx_latch: [false; 6],
-            fx_held: [false; 6],
-            fx_down_at: [0.0; 6],
             key_down: [false; TRACKS],
             export: Export::Closed,
             songs_sent: 0,
@@ -1127,8 +1114,7 @@ impl SolarumApp {
         fresh.master = self.song.master;
         self.song = fresh;
         self.solo = None;
-        (self.filter, self.filter_res, self.filter_lock) = (0.0, 0.0, false);
-        self.fx_latch = [false; 6];
+        (self.filter, self.filter_res) = (0.0, 0.0);
         self.send(Cmd::Filter(0.0));
         self.send(Cmd::FilterRes(0.0));
         // A new project has its own history
@@ -1505,9 +1491,6 @@ impl SolarumApp {
                 }
                 self.help = false;
                 self.settings = false;
-                // … and lets go of everything locked on
-                self.fx_latch = [false; 6];
-                self.filter_lock = false;
                 continue;
             }
             if let Some(i) = pad_keys.iter().position(|&k| k == key) {
@@ -3205,21 +3188,8 @@ impl SolarumApp {
             0.0
         };
         let before = (self.filter, self.filter_res);
-        let tip = if self.filter_lock {
-            "Filter, held: drag to move it – it stays. Double-click (or Esc) lets it spring back"
-        } else {
-            "Filter: drag left for low-pass, right for high-pass, up for resonance – let go and it springs back.\nDouble-click: it stays where it is"
-        };
-        controls::filter_pad(
-            ui,
-            &mut self.filter,
-            &mut self.filter_res,
-            &mut self.filter_lock,
-            engine_filter,
-            w,
-            filter_h,
-        )
-        .on_hover_text(tip);
+        controls::filter_pad(ui, &mut self.filter, &mut self.filter_res, engine_filter, w, filter_h)
+            .on_hover_text("Filter: drag left for low-pass, right for high-pass, up for resonance – let go and it springs back");
         if self.filter != before.0 {
             self.send(Cmd::Filter(self.filter));
         }
@@ -3238,8 +3208,7 @@ impl SolarumApp {
                     let fx = Fx::ALL[i];
                     let (r, resp) = ui.allocate_exact_size(vec2(bw, bh), Sense::click_and_drag());
                     self.fx_mouse[i] = resp.is_pointer_button_down_on();
-                    let latched = self.fx_latch[i];
-                    let active = self.fx_mouse[i] || self.fx_key[i] || latched;
+                    let active = self.fx_mouse[i] || self.fx_key[i];
                     let lit = auto_fx(fx, live);
                     // The picture stands still until the mouse is on it; it runs faster while
                     // the effect is on, and a press sends a burst out of the button
@@ -3274,22 +3243,12 @@ impl SolarumApp {
                         lit,
                         |p, rr, ink| controls::fx_art(p, rr, i, ink, t, boost),
                     );
-                    // Locked on: a pin in the corner
-                    if latched {
-                        ui.painter()
-                            .text(r.left_top() + vec2(8.0, 6.0), Align2::LEFT_TOP, ph::PUSH_PIN, bold(12.0), SPACE);
-                    }
                     let since = (now - self.fx_pressed_at[i]) as f32;
                     if since < 0.5 {
                         controls::fx_burst(ui.painter(), r, fx_color(fx), since / 0.5);
                         ui.ctx().request_repaint();
                     }
-                    let how = if latched {
-                        "locked on – tap to let go"
-                    } else {
-                        "hold to play, tap to lock it on"
-                    };
-                    resp.on_hover_text(format!("{}\n{how} ({})", fx.blurb(), fx.key()))
+                    resp.on_hover_text(format!("{} – hold ({})", fx.blurb(), fx.key()))
                         .on_hover_cursor(egui::CursorIcon::PointingHand);
                 }
             });
@@ -4103,18 +4062,9 @@ impl SolarumApp {
 
     /// End of every frame: tell the engine what changed
     fn finish_frame(&mut self, now: f64) {
-        // Live effects: held with a key or the mouse. A tap locks the effect on until the next
-        // tap; holding it while it's locked lets it go when you let go
+        // Live effects: held with a key or the mouse
         for i in 0..Fx::ALL.len() {
-            let held = self.fx_key[i] || self.fx_mouse[i];
-            if held && !self.fx_held[i] {
-                self.fx_down_at[i] = now;
-            } else if !held && self.fx_held[i] {
-                let tap = now - self.fx_down_at[i] < FX_TAP;
-                self.fx_latch[i] = tap && !self.fx_latch[i];
-            }
-            self.fx_held[i] = held;
-            let on = held || self.fx_latch[i];
+            let on = self.fx_key[i] || self.fx_mouse[i];
             if on != self.fx_sent[i] {
                 self.fx_sent[i] = on;
                 self.send(Cmd::Fx(Fx::ALL[i], on));
@@ -4192,29 +4142,6 @@ mod tests {
         app.song.tracks[0].mute = true;
         frame(&mut app, &mut snap, 7.0);
         assert!(app.redo.is_empty());
-    }
-
-    #[test]
-    fn a_tap_locks_an_effect_and_a_hold_does_not() {
-        let mut app = SolarumApp::headless(Song::default(), View::Orbit, false);
-        let press = |app: &mut SolarumApp, down: f64, up: f64| {
-            app.fx_key[1] = true;
-            app.finish_frame(down);
-            assert!(app.fx_sent[1]);
-            app.fx_key[1] = false;
-            app.finish_frame(up);
-        };
-        // A tap: it stays on; the next tap lets it go
-        press(&mut app, 1.0, 1.1);
-        assert!(app.fx_latch[1] && app.fx_sent[1]);
-        press(&mut app, 2.0, 2.1);
-        assert!(!app.fx_latch[1] && !app.fx_sent[1]);
-        // Held: only while held; held while locked: off when let go
-        press(&mut app, 3.0, 4.0);
-        assert!(!app.fx_sent[1]);
-        press(&mut app, 5.0, 5.1);
-        press(&mut app, 6.0, 7.0);
-        assert!(!app.fx_latch[1] && !app.fx_sent[1]);
     }
 
     #[test]

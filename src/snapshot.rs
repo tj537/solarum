@@ -330,15 +330,6 @@ mod tests {
             app.song.prog = 3;
             app.fake_live = Some(playing(12.5, &[0]));
         });
-        // The live panel by hand: ECHO tapped on, the filter held in a low-pass
-        render("live_held", 1100.0, 860.0, |app| {
-            app.sound_open = true;
-            app.song.macros.space = 0.8;
-            app.fx_latch[1] = true;
-            app.filter = -0.5;
-            app.filter_lock = true;
-            app.fake_live = Some(playing(4.0, &[0]));
-        });
         // The README picture: docs/images/solarum.jpg (a 2000 px wide JPEG of this)
         render("readme", 1360.0, 860.0, |app| {
             use crate::song::{Vibe, Voice};

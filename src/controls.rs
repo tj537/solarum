@@ -177,22 +177,17 @@ pub fn eq_curve(ui: &mut Ui, bands: &mut [f32; 3], colors: [Color32; 3], width: 
 }
 
 /// The filter as a pad: left low-pass, right high-pass, the middle off; up adds resonance.
-/// Let go and it springs back to off – unless it's held (`lock`, a double-click toggles it).
+/// Let go and it springs back to off.
 /// `engine_pos` is where the engine's filter is (smoothed, or swept by a breakdown) – the
 /// puck shows it while no hand is on the pad.
-pub fn filter_pad(ui: &mut Ui, pos: &mut f32, res: &mut f32, lock: &mut bool, engine_pos: f32, width: f32, height: f32) -> Response {
+pub fn filter_pad(ui: &mut Ui, pos: &mut f32, res: &mut f32, engine_pos: f32, width: f32, height: f32) -> Response {
     let (rect, mut resp) = ui.allocate_exact_size(vec2(width, height), Sense::click_and_drag());
     let held = resp.is_pointer_button_down_on() || resp.dragged();
     let rest_y = rect.center().y + rect.height() * 0.15;
-    if resp.double_clicked() {
-        *lock = !*lock;
-    }
     if let Some(at) = resp.interact_pointer_pos().filter(|_| held) {
         *pos = ((at.x - rect.center().x) / (rect.width() / 2.0 - 12.0)).clamp(-1.0, 1.0);
         *res = ((rest_y - at.y) / (rest_y - rect.top() - 12.0)).clamp(0.0, 1.0);
         resp.mark_changed();
-    } else if *lock {
-        // Held: it stays where the hand left it
     } else if pos.abs() > 0.0 || *res > 0.0 {
         // Spring back
         *pos *= 0.75;
@@ -221,17 +216,7 @@ pub fn filter_pad(ui: &mut Ui, pos: &mut f32, res: &mut f32, lock: &mut bool, en
         HIGH_PASS
     };
     let pad = vec2(10.0, 8.0);
-    if *lock {
-        p.text(
-            rect.center_top() + vec2(0.0, pad.y),
-            Align2::CENTER_TOP,
-            format!("{} HELD", ph::LOCK_SIMPLE),
-            bold(10.0),
-            TEXT,
-        );
-    } else {
-        p.text(rect.center_top() + vec2(0.0, pad.y), Align2::CENTER_TOP, "OFF", bold(10.0), FAINT);
-    }
+    p.text(rect.center_top() + vec2(0.0, pad.y), Align2::CENTER_TOP, "OFF", bold(10.0), FAINT);
     p.text(
         rect.left_top() + pad,
         Align2::LEFT_TOP,
@@ -265,10 +250,6 @@ pub fn filter_pad(ui: &mut Ui, pos: &mut f32, res: &mut f32, lock: &mut bool, en
     glow(&p, at, 11.0, color, amount);
     p.circle_filled(at, 11.0, mix(PANEL, BG, 0.5));
     p.circle_stroke(at, 11.0, stroke(2.0, if amount > 0.01 { color } else { TEXT }));
-    if *lock {
-        // A filled heart: it doesn't spring back
-        p.circle_filled(at, 4.0, if amount > 0.01 { color } else { TEXT });
-    }
     resp.on_hover_cursor(egui::CursorIcon::Grab)
 }
 
