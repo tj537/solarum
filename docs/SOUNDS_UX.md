@@ -8,10 +8,9 @@ Each step down the list gives you more control; none of them is in the way of th
 **+ New sound** (⌘N) opens *Make a sound* – also what an empty library shows, so the first
 visit never starts on a blank page.
 
-- **Start from a track** – eight cards in the tracks' colours, each with a picture of its sound.
-  - *Paint over it*: the track's template on the drawing board (`library::template`).
-  - *Edit the real one*: the kit's own sound as it plays now, in the waveform editor (`engine::render_hit`).
-- **Or start from** – blank board, surprise me, record, import.
+- **From nothing** (on top) – blank board, record, import: three cards with a picture each.
+- **Paint over a track** – eight cards in the tracks' colours, each showing its template's
+  line and loudness; a click puts it on the drawing board (`library::template`).
 
 ## 2. Paint it
 

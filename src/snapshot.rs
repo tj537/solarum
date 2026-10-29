@@ -272,9 +272,7 @@ mod tests {
             app.lib_ui.select(lp);
         });
         render("sounds_empty", 1100.0, 700.0, |app| app.lib_ui.show_for(None));
-        render("sounds_draw", 1360.0, 860.0, |app| app.lib_ui.draw_surprise(4));
-        render("sounds_start", 1360.0, 860.0, |app| app.lib_ui.show_start(false));
-        render("sounds_start_real", 1360.0, 860.0, |app| app.lib_ui.show_start(true));
+        render("sounds_start", 1360.0, 860.0, |app| app.lib_ui.show_start());
         render("sounds_template", 1360.0, 860.0, |app| {
             app.lib_ui.draw_template(crate::song::Voice::Kick)
         });

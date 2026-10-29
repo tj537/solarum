@@ -23,8 +23,6 @@ pub enum Out {
     Assign(Voice, usize),
     /// Give this sound a slot and put it on its track
     Use(u64),
-    /// Copy the kit's own sound of this track into the library, to edit it
-    Kit(Voice),
 }
 
 /// What the pen does on the drawing board
@@ -91,16 +89,12 @@ pub struct LibraryUi {
     tool: Tool,
     /// The last column the pen was at, its value, and the lane (0 = pitch, 1 = loudness)
     pen: Option<(usize, f32, u8)>,
-    /// The start page: every way to make a sound; templates are painted or the kit's real ones
+    /// The start page: every way to make a sound, the tracks' templates first
     start: bool,
-    real: bool,
-    /// Little waveforms of the templates, one per track (made once)
-    thumbs: Vec<Vec<f32>>,
     /// Space this frame (taken before any button can see it)
     space: bool,
     /// The edited sound as a waveform, for the buffer it was made from
     shown: Option<(Arc<SampleBuf>, Arc<Source>)>,
-    rng: crate::rng::Rng,
 }
 
 impl Default for LibraryUi {
@@ -135,11 +129,8 @@ impl Default for LibraryUi {
             tool: Tool::Pen,
             pen: None,
             start: false,
-            real: false,
-            thumbs: Vec::new(),
             space: false,
             shown: None,
-            rng: crate::rng::Rng::from_clock(),
         }
     }
 }
@@ -380,16 +371,6 @@ impl LibraryUi {
     pub fn select(&mut self, id: u64) {
         self.selected = Some(id);
         self.start = false;
-    }
-
-    /// The kit's own sound of a track, rendered by the app: a new draft to cut and shape
-    pub fn adopt_kit(&mut self, lib: &mut Library, voice: Voice, data: Vec<f32>, now: f64) {
-        let n = lib.entries.iter().filter(|e| e.voice == voice).count() + 1;
-        let id = lib.add(&format!("{} {n}", voice.name()), voice, data);
-        lib.set_draft(id, true);
-        self.drawing = None;
-        self.select(id);
-        self.say("The kit's own sound – cut it, shape it, then Save", now);
     }
 
     fn open_start(&mut self) {
@@ -1236,14 +1217,6 @@ impl LibraryUi {
         }
     }
 
-    /// For the screenshots: the board with a surprise on it
-    #[cfg(test)]
-    pub fn draw_surprise(&mut self, seed: u64) {
-        self.open = true;
-        let d = library::surprise(&mut crate::rng::Rng::new(seed));
-        self.start_drawing(Some(d), Voice::Rim, false);
-    }
-
     /// Open the board with a track's template (for the snapshots)
     #[cfg(test)]
     pub fn draw_template(&mut self, v: Voice) {
@@ -1253,10 +1226,9 @@ impl LibraryUi {
 
     /// Open the start page (for the snapshots)
     #[cfg(test)]
-    pub fn show_start(&mut self, real: bool) {
+    pub fn show_start(&mut self) {
         self.open = true;
         self.open_start();
-        self.real = real;
     }
 
     fn start_drawing(&mut self, from: Option<(library::Drawing, &'static str)>, voice: Voice, template: bool) {
@@ -1275,19 +1247,9 @@ impl LibraryUi {
 
     // ───────────── The start page ─────────────
 
-    /// Every way to a new sound: a track to start from (its template to paint over, or the
-    /// kit's real sound to cut and shape) – or a blank board, a surprise, the mic, a file
+    /// Every way to a new sound: a track's template to paint over – or a blank board, the
+    /// mic, a file
     fn start_page(&mut self, ui: &mut Ui, r: Rect, lib: &mut Library, blocked: bool, out: &mut Vec<Out>, now: f64) {
-        if self.thumbs.is_empty() {
-            self.thumbs = Voice::ALL
-                .iter()
-                .map(|&v| {
-                    let x = library::render_drawing(&library::template(v));
-                    let k = x.len().div_ceil(60).max(1);
-                    x.chunks(k).map(|c| c.iter().fold(0.0f32, |m, s| m.max(s.abs()))).collect()
-                })
-                .collect();
-        }
         let p = ui.painter().clone();
         p.rect_filled(r, 14.0, mix(BG, PANEL, 0.6));
         let inner = r.shrink(22.0);
@@ -1305,36 +1267,80 @@ impl LibraryUi {
             });
         });
         ui.label(
-            egui::RichText::new("Pick a track to start from, then make it yours. Or start from nothing.")
+            egui::RichText::new("Start from nothing – or pick a track and paint over its sound until it's yours.")
                 .font(body(13.0))
                 .color(DIM),
         );
         ui.add_space(10.0);
-        // Paint over the template, or edit the kit's real sound
+        // From nothing: draw, record, import
+        let gap = 12.0;
+        let low_h = 136.0;
+        let t = ui.input(|i| i.time) as f32;
+        let bw = (inner.width() - gap * 2.0) / 3.0;
+        let mut way = None;
         ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 6.0;
-            if chip(ui, &format!("{}  Paint over it", ph::PENCIL_SIMPLE), !self.real, ACID)
-                .on_hover_text("A drawing of the track's sound – paint its pitch and loudness")
-                .clicked()
-            {
-                self.real = false;
-            }
-            if chip(ui, &format!("{}  Edit the real one", ph::WAVEFORM), self.real, ACID)
-                .on_hover_text("The kit's own sound as it plays now – cut it, pitch it, turn it round")
-                .clicked()
-            {
-                self.real = true;
+            ui.spacing_mut().item_spacing.x = gap;
+            for (k, title, sub) in [
+                (0, "Blank board", "Paint any line, hear it"),
+                (1, "Record", "Voice, door – anything"),
+                (2, "Import", "WAV, MP3, FLAC, AIFF …"),
+            ] {
+                let (br, resp) = ui.allocate_exact_size(vec2(bw, low_h - 24.0), Sense::click());
+                let hot = resp.hovered() && !blocked;
+                let col = if k == 1 { RED } else { ACID };
+                let p = ui.painter_at(br);
+                p.rect_filled(br, 12.0, if hot { mix(PAD, col, 0.08) } else { PAD });
+                p.rect_stroke(
+                    br,
+                    12.0,
+                    stroke(if hot { 1.5 } else { 1.0 }, if hot { col } else { LINE }),
+                    egui::StrokeKind::Inside,
+                );
+                // the picture on the left, in its own little window into space
+                let pic = Rect::from_min_size(br.min + vec2(10.0, 10.0), vec2((br.width() * 0.4).min(150.0), br.height() - 20.0));
+                p.rect_filled(pic, 9.0, SPACE);
+                way_picture(&p, pic.shrink(10.0), k, col, hot, t);
+                let x = pic.right() + 16.0;
+                let w = br.right() - x - 14.0;
+                p.text(pos2(x, br.top() + 30.0), Align2::LEFT_CENTER, title, bold(17.0), TEXT);
+                let sub = fit_text(&p, sub, body(12.0), w);
+                p.text(pos2(x, br.top() + 54.0), Align2::LEFT_CENTER, sub, body(12.0), DIM);
+                p.text(
+                    pos2(br.right() - 14.0, br.bottom() - 16.0),
+                    Align2::RIGHT_CENTER,
+                    ph::ARROW_RIGHT,
+                    body(15.0),
+                    if hot { col } else { FAINT },
+                );
+                if hot {
+                    ui.ctx().request_repaint();
+                }
+                if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() && !blocked {
+                    way = Some(k);
+                }
             }
         });
-        ui.add_space(10.0);
+        match way {
+            Some(0) => self.start_drawing(None, self.filter.unwrap_or(Voice::Rim), false),
+            Some(1) => {
+                self.record_panel = true;
+                self.inputs = library::inputs();
+            }
+            Some(2) => {
+                if let Some(paths) = rfd::FileDialog::new().add_filter("Audio", &library::EXTENSIONS).pick_files() {
+                    self.start = false;
+                    self.import(lib, &paths, now);
+                }
+            }
+            _ => {}
+        }
 
         // Eight tracks, two rows of four
-        let gap = 12.0;
-        let low_h = 92.0;
-        let grid_h = (ui.available_height() - low_h - 44.0).max(160.0);
+        ui.add_space(14.0);
+        ui.label(egui::RichText::new("OR PAINT OVER A TRACK").font(bold(11.0)).color(FAINT));
+        let grid_h = (ui.available_height() - 6.0).max(160.0);
         let cw = (inner.width() - gap * 3.0) / 4.0;
-        let ch = ((grid_h - gap) / 2.0).min(190.0);
-        let t = ui.input(|i| i.time) as f32;
+        let ch = ((grid_h - gap) / 2.0).min(210.0);
         let mut picked = None;
         for row in Voice::ALL.chunks(4) {
             ui.horizontal(|ui| {
@@ -1360,16 +1366,11 @@ impl LibraryUi {
                         TEXT,
                     );
                     let pic = Rect::from_min_max(pos2(cr.left() + 14.0, cr.top() + 38.0), pos2(cr.right() - 14.0, cr.bottom() - 30.0));
-                    if self.real {
-                        thumb_wave(&p, pic, &self.thumbs[v.index()], col);
-                    } else {
-                        thumb_drawing(&p, pic, &library::template(v), col);
-                    }
-                    let hint = if self.real { "Edit it" } else { "Paint it" };
+                    thumb_drawing(&p, pic, &library::template(v), col);
                     p.text(
                         pos2(cr.right() - 14.0, cr.bottom() - 15.0),
                         Align2::RIGHT_CENTER,
-                        format!("{hint}  {}", ph::ARROW_RIGHT),
+                        format!("Paint it  {}", ph::ARROW_RIGHT),
                         bold(12.0),
                         if hot { col } else { FAINT },
                     );
@@ -1387,61 +1388,8 @@ impl LibraryUi {
             ui.add_space(gap - 6.0);
         }
         if let Some(v) = picked {
-            if self.real {
-                out.push(Out::Kit(v));
-            } else {
-                self.start_drawing(Some((library::template(v), template_name(v))), v, true);
-                self.play_drawing(out, now);
-            }
-        }
-
-        // Or from nothing
-        ui.add_space(6.0);
-        ui.label(egui::RichText::new("OR START FROM").font(bold(11.0)).color(FAINT));
-        let bw = (inner.width() - gap * 3.0) / 4.0;
-        let mut way = None;
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = gap;
-            for (k, icon, title, sub) in [
-                (0, ph::PENCIL_SIMPLE_LINE, "Blank board", "draw any line, hear it"),
-                (1, ph::SPARKLE, "Surprise me", "a random space sound"),
-                (2, ph::MICROPHONE, "Record", "voice, a door, anything"),
-                (3, ph::UPLOAD_SIMPLE, "Import", "WAV, AIFF, MP3, FLAC, OGG"),
-            ] {
-                let (br, resp) = ui.allocate_exact_size(vec2(bw, low_h - 20.0), Sense::click());
-                let hot = resp.hovered() && !blocked;
-                let p = ui.painter_at(br);
-                p.rect_filled(br, 12.0, if hot { mix(PAD, ACID, 0.08) } else { PAD });
-                p.rect_stroke(br, 12.0, stroke(1.0, if hot { ACID } else { LINE }), egui::StrokeKind::Inside);
-                let c = pos2(br.left() + 34.0, br.center().y);
-                p.circle_filled(c, 20.0, if hot { ACID } else { mix(PAD, ACID, 0.18) });
-                p.text(c, Align2::CENTER_CENTER, icon, body(19.0), if hot { BG } else { ACID });
-                p.text(pos2(c.x + 32.0, br.center().y - 9.0), Align2::LEFT_CENTER, title, bold(14.0), TEXT);
-                let sub = fit_text(&p, sub, body(11.5), br.right() - c.x - 40.0);
-                p.text(pos2(c.x + 32.0, br.center().y + 10.0), Align2::LEFT_CENTER, sub, body(11.5), DIM);
-                if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() && !blocked {
-                    way = Some(k);
-                }
-            }
-        });
-        match way {
-            Some(0) => self.start_drawing(None, self.filter.unwrap_or(Voice::Rim), false),
-            Some(1) => {
-                let d = library::surprise(&mut self.rng);
-                self.start_drawing(Some(d), self.filter.unwrap_or(Voice::Rim), false);
-                self.play_drawing(out, now);
-            }
-            Some(2) => {
-                self.record_panel = true;
-                self.inputs = library::inputs();
-            }
-            Some(3) => {
-                if let Some(paths) = rfd::FileDialog::new().add_filter("Audio", &library::EXTENSIONS).pick_files() {
-                    self.start = false;
-                    self.import(lib, &paths, now);
-                }
-            }
-            _ => {}
+            self.start_drawing(Some((library::template(v), template_name(v))), v, true);
+            self.play_drawing(out, now);
         }
     }
 
@@ -2228,16 +2176,70 @@ fn thumb_drawing(p: &egui::Painter, r: Rect, d: &library::Drawing, col: Color32)
     p.add(Shape::line(pts, stroke(2.5, col)));
 }
 
-/// A sound in small: its peaks mirrored round the middle
-fn thumb_wave(p: &egui::Painter, r: Rect, peaks: &[f32], col: Color32) {
-    let top = peaks.iter().fold(1e-4f32, |m, x| m.max(*x));
-    let w = r.width() / peaks.len().max(1) as f32;
-    for (i, pk) in peaks.iter().enumerate() {
-        let x = r.left() + (i as f32 + 0.5) * w;
-        let h = (pk / top).max(0.02) * r.height() * 0.48;
-        p.line_segment(
-            [pos2(x, r.center().y - h), pos2(x, r.center().y + h)],
-            stroke((w * 0.6).max(1.0), col),
-        );
+/// What a way to start does, as a little picture that comes alive on hover: a line being
+/// drawn, a level meter, a file landing as a waveform
+fn way_picture(p: &egui::Painter, r: Rect, k: usize, col: Color32, hot: bool, t: f32) {
+    match k {
+        0 => {
+            let f = if hot { (t * 0.45).fract() } else { 0.72 };
+            let n = 48;
+            let pts: Vec<Pos2> = (0..=((n as f32 * f) as usize))
+                .map(|i| {
+                    let x = i as f32 / n as f32;
+                    let y = 0.5 - (x * TAU * 1.3).sin() * 0.28 * (1.0 - x * 0.4) - x * 0.1;
+                    pos2(r.left() + x * r.width(), r.top() + y * r.height())
+                })
+                .collect();
+            for i in 1..4 {
+                let y = r.top() + r.height() * i as f32 / 4.0;
+                p.line_segment([pos2(r.left(), y), pos2(r.right(), y)], stroke(1.0, alpha(LINE, 0.25)));
+            }
+            if let Some(&tip) = pts.last() {
+                p.add(Shape::line(pts.clone(), stroke(7.0, alpha(col, 0.15))));
+                p.add(Shape::line(pts, stroke(2.5, col)));
+                p.text(tip + vec2(7.0, -9.0), Align2::CENTER_CENTER, ph::PENCIL_SIMPLE, body(16.0), TEXT);
+            }
+        }
+        1 => {
+            let bars = 11;
+            let w = r.width() / bars as f32;
+            for i in 0..bars {
+                let x = r.left() + (i as f32 + 0.5) * w;
+                let calm = 0.25 + 0.6 * (-((i as f32 - 5.0) / 3.0).powi(2)).exp();
+                let h = if hot {
+                    (0.2 + 0.8 * ((t * 7.0 + i as f32 * 1.7).sin() * 0.5 + 0.5) * calm.max(0.4)).min(1.0)
+                } else {
+                    calm
+                };
+                let h = h * r.height() * 0.5;
+                p.line_segment(
+                    [pos2(x, r.center().y - h), pos2(x, r.center().y + h)],
+                    stroke(w * 0.55, if hot { col } else { alpha(col, 0.55) }),
+                );
+            }
+            let on = !hot || (t * 2.0).fract() < 0.6;
+            p.circle_filled(r.left_top() + vec2(4.0, 2.0), 4.0, if on { RED } else { alpha(RED, 0.3) });
+        }
+        _ => {
+            // hits decaying along the bottom half, a file icon dropping into them
+            let base = r.top() + r.height() * 0.68;
+            let n = 40;
+            let w = r.width() / n as f32;
+            for i in 0..n {
+                let x = r.left() + (i as f32 + 0.5) * w;
+                let ph = (i % 10) as f32 / 10.0;
+                let h = (-ph * 4.0).exp() * r.height() * 0.3 + 1.0;
+                p.line_segment([pos2(x, base - h), pos2(x, base + h)], stroke((w * 0.6).max(1.0), alpha(col, 0.8)));
+            }
+            let drop = if hot { (t * 0.9).fract() } else { 0.0 };
+            let y = r.top() + 10.0 + drop * r.height() * 0.25;
+            p.text(
+                pos2(r.center().x, y),
+                Align2::CENTER_CENTER,
+                ph::FILE_AUDIO,
+                body(22.0),
+                alpha(TEXT, 1.0 - drop * 0.7),
+            );
+        }
     }
 }

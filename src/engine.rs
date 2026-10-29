@@ -2088,34 +2088,6 @@ impl Engine {
     }
 }
 
-/// One hit of a track's own sound (as the kit plays it now, without the room), mono at the
-/// sampler's rate and cut where it has died away – a sound to start editing from
-pub fn render_hit(song: &Song, voice: Voice) -> Vec<f32> {
-    let sr = crate::sampler::SAMPLE_SR;
-    let mut s = *song;
-    s.macros.space = 0.0;
-    let t = s.track_mut(voice);
-    t.mute = false;
-    if t.sound >= crate::sampler::CUSTOM {
-        t.sound = 0; // a sample of yours isn't loaded here – start from the kit's own
-    }
-    let mut e = Engine::new(sr, s, Shared::new(), None, 1);
-    e.handle(Cmd::Hit {
-        voice,
-        vel: 0.9,
-        record: false,
-    });
-    let mut out = vec![0.0f32; sr as usize * 3 * 2];
-    for chunk in out.chunks_mut(512) {
-        e.render(chunk);
-    }
-    let mono: Vec<f32> = out.chunks(2).map(|f| (f[0] + f[1]) * 0.5).collect();
-    let peak = mono.iter().fold(0.0f32, |m, x| m.max(x.abs()));
-    let last = mono.iter().rposition(|x| x.abs() > peak * 0.003).unwrap_or(0);
-    let start = mono.iter().position(|x| x.abs() > peak * 0.003).unwrap_or(0);
-    mono[start..=last.max(start)].to_vec()
-}
-
 /// Render `bars` bars of the song (plus a reverb tail) into interleaved stereo (tests, demo loops)
 #[cfg(test)]
 pub fn render_offline(song: &Song, bars: u32, sr: u32, seed: u64) -> Vec<f32> {
