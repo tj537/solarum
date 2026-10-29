@@ -29,7 +29,7 @@ Commit only when `cargo test` exits 0.
 
 ## Website
 
-`site/` is the static page at https://tj537.github.io/solarum/ (one `index.html`, fonts, screenshot, icon); `.github/workflows/pages.yml` publishes it on every push to `main` that touches `site/`. Preview it with the `site` entry in `.claude/launch.json`. Update it with new features and when the first-launch steps change.
+`site/` is the static page at https://tj537.github.io/solarum/ (one `index.html`, fonts, screenshot, icon); `.github/workflows/pages.yml` publishes it on every push to `main` that touches `site/`. Preview it with the `site` entry in `.claude/launch.json`. Update it with new features and when the first-launch steps change. SEO: the JSON-LD and the FAQ in `index.html` say the same things (keep them in sync), `llms.txt` is the summary for AI assistants, and `sitemap.xml` gets a new `lastmod` when the page changes. The `robots.txt` lives in the root site repo `tj537/tj537.github.io` (crawlers only read it at the domain root).
 
 ## Releases
 
