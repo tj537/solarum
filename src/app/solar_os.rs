@@ -851,7 +851,7 @@ impl SolarumApp {
                         });
                         ui.add_space(2.0);
                         ui.label(
-                            egui::RichText::new("Type it at SOLAR> or click it here")
+                            egui::RichText::new("Type it at LUNA> or click it here")
                                 .font(body(11.0))
                                 .color(FAINT),
                         );
@@ -912,8 +912,8 @@ impl SolarumApp {
             [line.left_top() - vec2(0.0, 2.0), line.right_top() - vec2(0.0, 2.0)],
             stroke(1.0, ACID.gamma_multiply(0.25)),
         );
-        p.text(line.left_center(), Align2::LEFT_CENTER, "SOLAR>", mono.clone(), ACID);
-        let field = Rect::from_min_max(pos2(line.left() + 44.0, line.top()), line.max);
+        p.text(line.left_center(), Align2::LEFT_CENTER, "LUNA>", mono.clone(), ACID);
+        let field = Rect::from_min_max(pos2(line.left() + 38.0, line.top()), line.max);
         let mut sent = None;
         ui.allocate_new_ui(egui::UiBuilder::new().max_rect(field), |ui| {
             // A calm cursor
