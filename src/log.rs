@@ -332,9 +332,10 @@ impl Log {
                 n => format!("DROP IN {n}"),
             };
             p.text(inner.right_top(), Align2::RIGHT_TOP, drop, mono(11.0), ACID);
-            let map = Rect::from_min_size(pos2(inner.left(), top), vec2(inner.width(), 24.0));
+            // Room under DROP IN for the drop's marker
+            let map = Rect::from_min_size(pos2(inner.left(), top + 8.0), vec2(inner.width(), 24.0));
             set_map(&p, map, w, energy.unwrap_or(0.0), now);
-            top += 34.0;
+            top += 42.0;
             let next = match w.next {
                 Some(n) => format!("CHANGE IN {}", n.max(1)),
                 None => String::new(),
