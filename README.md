@@ -129,7 +129,7 @@ It's a little operating system, **SOLAR OS**. The title bar has **SET** (how oft
   - the **master EQ** as a curve with three points to drag; a band shows its dB once it's moved.
 
   Double-click resets. When the auto mode sweeps the acid or a breakdown sweeps the filter, the pucks move with it.
-- **Live effects (hold to use):** stutter, echo, wash, crush, gate and tape stop. Each button shows what it does in a little picture that moves when the mouse is over it, runs faster while the effect is on and bursts out of the button when you press it. Next to them is a **filter pad**: drag left for low-pass, right for high-pass, up for resonance; it springs back when you let go. When Solarum uses an effect by itself – like the gate in every build-up – its button lights up and flickers with the chop.
+- **Live effects (hold to use):** stutter, echo, wash, crush, gate and tape stop (let go and the tape spins back up onto the beat). Each button shows what it does in a little picture that moves when the mouse is over it, runs faster while the effect is on and bursts out of the button when you press it. Next to them is a **filter pad**: drag left for low-pass, right for high-pass, up for resonance; it springs back when you let go. When Solarum uses an effect by itself – like the gate in every build-up – its button lights up and flickers with the chop.
 
 ### Visualizers
 

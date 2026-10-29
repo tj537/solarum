@@ -249,6 +249,12 @@ struct Build {
     len: u64,
 }
 
+/// Crush: the sample rate it holds at, and its steps (on the square root of the level, about 6 bits)
+const CRUSH_RATE: f32 = 9000.0;
+const CRUSH_STEPS: f32 = 24.0;
+/// Tape stop: seconds to stand still, and to spin back up when let go
+const TAPE_STOP: f32 = 0.8;
+const TAPE_START: f32 = 0.35;
 /// How much of the mix goes into the reverb at full wash
 const WASH_SEND: f32 = 1.2;
 
@@ -518,8 +524,11 @@ pub struct Engine {
     /// Keeps kick and bass out of the wash, so it drowns instead of booming
     wash_hp: Svf,
     crush: f32,
+    /// Crush's own sample clock (it holds at CRUSH_RATE, whatever the device runs at)
     crush_count: f32,
     crush_hold: (f32, f32),
+    /// Rounds off the steps of the held signal a little
+    crush_lp: (f32, f32),
     gate: f32,
     gate_env: f32,
     /// Tape stop: the last two seconds of output, read back slower and slower
@@ -528,6 +537,8 @@ pub struct Engine {
     tape_r: f64,
     tape_rate: f32,
     taping: bool,
+    /// How much of the output comes from the tape: 1 while it stops and spins back up, then fades to the live mix
+    tape_mix: f32,
     /// Pump: everything ducks under the kick
     pump_env: f32,
     eq_low: [Svf; 2],
@@ -652,6 +663,7 @@ impl Engine {
             crush: 0.0,
             crush_count: 0.0,
             crush_hold: (0.0, 0.0),
+            crush_lp: (0.0, 0.0),
             gate: 0.0,
             gate_env: 1.0,
             tape: vec![0.0; (sr * 2.0) as usize * 2],
@@ -659,6 +671,7 @@ impl Engine {
             tape_r: 0.0,
             tape_rate: 1.0,
             taping: false,
+            tape_mix: 0.0,
             pump_env: 0.0,
             eq_low: [Svf::new(110.0, 0.7, sr), Svf::new(110.0, 0.7, sr)],
             eq_mid: [Svf::new(1_000.0, 0.8, sr), Svf::new(1_000.0, 0.8, sr)],
@@ -1796,6 +1809,11 @@ impl Engine {
         let eq_on = g_low.abs() + g_mid.abs() + g_high.abs() > 0.01;
         let band_coef = (-1.0 / (0.03 * sr)).exp();
         let wash_release = (-1.0 / (2.5 * sr)).exp();
+        // Crush fades in and out over about 30 ms; its held signal is rounded off a little above 5 kHz
+        let crush_coef = 1.0 - (-1.0 / (0.03 * sr)).exp();
+        let crush_lp = 1.0 - (-std::f32::consts::TAU * 5500.0 / sr).exp();
+        // The gate's edges take about 2 ms, at any sample rate
+        let gate_coef = 1.0 - (-1.0 / (0.002 * sr)).exp();
 
         for frame in out.as_chunks_mut::<2>().0 {
             // ── Clock ──
@@ -1981,18 +1999,28 @@ impl Engine {
                 r = self.break_lp_r.run(r).lp;
             }
 
-            // Crush: hold every few samples and round to fewer bits
-            self.crush += ((if crush_on { 1.0 } else { 0.0 }) - self.crush) * 0.002;
-            if self.crush > 0.002 {
-                self.crush_count += 1.0;
-                let hold = 1.0 + self.crush * 9.0;
-                if self.crush_count >= hold {
-                    self.crush_count -= hold;
-                    let q = 2f32.powf(12.0 - self.crush * 8.0);
-                    self.crush_hold = ((l * q).round() / q, (r * q).round() / q);
+            // Crush: one fixed lo-fi sound (a low sample rate, few bits) faded in and out, so switching
+            // it never steps through other settings. The bits are companded: quiet tails get grainy
+            // instead of dropping out.
+            self.crush += ((if crush_on { 1.0 } else { 0.0 }) - self.crush) * crush_coef;
+            if self.crush > 1e-3 {
+                self.crush_count += CRUSH_RATE / sr;
+                if self.crush_count >= 1.0 {
+                    self.crush_count -= 1.0;
+                    let q = |x: f32| {
+                        let y = (x.abs().sqrt() * CRUSH_STEPS).round() / CRUSH_STEPS;
+                        (y * y).copysign(x)
+                    };
+                    self.crush_hold = (q(l), q(r));
                 }
-                l += (self.crush_hold.0 * 1.3 - l) * self.crush;
-                r += (self.crush_hold.1 * 1.3 - r) * self.crush;
+                self.crush_lp.0 += (self.crush_hold.0 - self.crush_lp.0) * crush_lp;
+                self.crush_lp.1 += (self.crush_hold.1 - self.crush_lp.1) * crush_lp;
+                let c = self.crush;
+                let m = c * c * (3.0 - 2.0 * c);
+                l += (self.crush_lp.0 - l) * m;
+                r += (self.crush_lp.1 - r) * m;
+            } else {
+                self.crush_lp = (l, r);
             }
             // Gate: open for the first half of every 16th (a gate build-up chops harder and harder)
             let build_gate = build.map_or(0.0, |p| (p * 1.3).min(1.0));
@@ -2000,7 +2028,7 @@ impl Engine {
             self.gate += (gate_want - self.gate) * 0.002;
             if self.gate > 0.002 {
                 let open = !self.playing || self.phase.fract() < 0.5;
-                self.gate_env += ((if open { 1.0 } else { 0.0 }) - self.gate_env) * 0.01;
+                self.gate_env += ((if open { 1.0 } else { 0.0 }) - self.gate_env) * gate_coef;
                 let g = 1.0 - self.gate * (1.0 - self.gate_env);
                 l *= g;
                 r *= g;
@@ -2031,7 +2059,8 @@ impl Engine {
             l *= g;
             r *= g;
 
-            // Tape stop: read the recent output back slower and slower until it stands still
+            // Tape stop: read the recent output back slower and slower until it stands still. Let go
+            // and it spins back up, landing on the live beat, then hands over to it.
             let n = self.tape.len() / 2;
             let w = self.tape_w;
             self.tape[2 * w] = l;
@@ -2040,19 +2069,40 @@ impl Engine {
             if tape_on {
                 if !self.taping {
                     self.taping = true;
-                    self.tape_r = w as f64;
-                    self.tape_rate = 1.0;
+                    // Pressed again while it spins up: slow down from where it is
+                    if self.tape_mix <= 0.0 {
+                        self.tape_r = w as f64;
+                        self.tape_rate = 1.0;
+                    }
                 }
+                self.tape_mix = 1.0;
+                self.tape_rate = (self.tape_rate - 1.0 / (TAPE_STOP * sr)).max(0.0);
+            } else if self.tape_mix > 0.0 {
+                if self.taping {
+                    self.taping = false;
+                    // Stood still (and silent): start the spin-up just far enough back that it
+                    // catches up with the live output when it's back at full speed
+                    if self.tape_rate == 0.0 {
+                        let lag = (TAPE_START * sr * 0.5) as usize;
+                        self.tape_r = ((w + n - lag) % n) as f64;
+                    }
+                }
+                if self.tape_rate < 1.0 {
+                    self.tape_rate = (self.tape_rate + 1.0 / (TAPE_START * sr)).min(1.0);
+                } else {
+                    self.tape_mix = (self.tape_mix - 1.0 / (0.02 * sr)).max(0.0);
+                }
+            }
+            if self.tape_mix > 0.0 {
                 let i = self.tape_r.floor() as usize % n;
                 let j = (i + 1) % n;
                 let f = self.tape_r.fract() as f32;
                 let fade = (self.tape_rate * 3.0).min(1.0);
-                l = (self.tape[2 * i] * (1.0 - f) + self.tape[2 * j] * f) * fade;
-                r = (self.tape[2 * i + 1] * (1.0 - f) + self.tape[2 * j + 1] * f) * fade;
+                let tl = (self.tape[2 * i] * (1.0 - f) + self.tape[2 * j] * f) * fade;
+                let tr = (self.tape[2 * i + 1] * (1.0 - f) + self.tape[2 * j + 1] * f) * fade;
+                l += (tl - l) * self.tape_mix;
+                r += (tr - r) * self.tape_mix;
                 self.tape_r = (self.tape_r + self.tape_rate as f64) % n as f64;
-                self.tape_rate = (self.tape_rate - 1.0 / (0.8 * sr)).max(0.0);
-            } else {
-                self.taping = false;
             }
 
             // The library's audition, after every effect
@@ -3175,6 +3225,58 @@ mod tests {
         e.render(&mut buf);
         e.render(&mut buf);
         assert!(db(&buf) > -45.0, "the tail rings out: {:.1} dB", db(&buf));
+    }
+
+    #[test]
+    fn tape_stop_spins_back_up_onto_the_live_beat() {
+        let song = gen::generate(Vibe::Peak, &Default::default(), &mut Rng::new(3));
+        let sr = 22_050.0;
+        let mut live = Engine::new(sr, song, Shared::new(), None, 1);
+        let mut e = Engine::new(sr, song, Shared::new(), None, 1);
+        live.handle(Cmd::Play);
+        e.handle(Cmd::Play);
+        let mut a = vec![0.0; 2 * 1024];
+        let mut b = a.clone();
+        let blocks = |secs: f32| (secs * sr / 1024.0) as usize;
+        for _ in 0..blocks(0.5) {
+            live.render(&mut a);
+            e.render(&mut b);
+        }
+        e.handle(Cmd::Fx(Fx::Tape, true));
+        for _ in 0..blocks(1.5) {
+            live.render(&mut a);
+            e.render(&mut b);
+        }
+        assert!(stats(&b).1 < 1e-4, "it stands still");
+        e.handle(Cmd::Fx(Fx::Tape, false));
+        let mut out = Vec::new();
+        for _ in 0..blocks(0.6) {
+            live.render(&mut a);
+            e.render(&mut b);
+            out.extend_from_slice(&b);
+        }
+        assert!(out.iter().all(|x| x.is_finite() && x.abs() <= 1.0));
+        assert!(stats(&out[..out.len() / 2]).1 > 0.01, "it spins back up");
+        assert_eq!(a, b, "and is back on the live beat");
+    }
+
+    #[test]
+    fn crush_keeps_the_level() {
+        let song = gen::generate(Vibe::Peak, &Default::default(), &mut Rng::new(3));
+        let mut e = Engine::new(22_050.0, song, Shared::new(), None, 1);
+        e.handle(Cmd::Play);
+        let bar = (e.step_len() * STEPS as f64) as usize;
+        let mut buf = vec![0.0; 2 * bar];
+        let db = |b: &[f32]| 20.0 * stats(b).1.log10();
+        e.render(&mut buf);
+        e.render(&mut buf);
+        let dry = db(&buf);
+        e.handle(Cmd::Fx(Fx::Crush, true));
+        e.render(&mut buf);
+        e.render(&mut buf);
+        let wet = db(&buf);
+        assert!(buf.iter().all(|x| x.is_finite() && x.abs() <= 1.0));
+        assert!((wet - dry).abs() < 2.0, "{dry:.1} → {wet:.1} dB");
     }
 
     #[test]
