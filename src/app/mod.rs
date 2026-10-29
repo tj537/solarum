@@ -1,5 +1,20 @@
 //! The window: top bar with the vibes, track list, the orbit (or pads) with the patterns
 //! below, sound knobs, auto mode and live effects.
+//!
+//! This file holds the `SolarumApp` struct, setup, the frame loop (`ui`, `finish_frame`) and small
+//! shared helpers; the other parts of the window live in the submodules below, each its own
+//! `impl SolarumApp` block.
+
+mod devices;
+mod favorites;
+mod history;
+mod live;
+mod project;
+mod solar_os;
+mod sync;
+mod top_bar;
+mod tracks;
+mod windows;
 
 use crate::audio::{self, Audio};
 use crate::controls;
@@ -25,16 +40,6 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
-mod devices;
-mod favorites;
-mod history;
-mod live;
-mod project;
-mod solar_os;
-mod sync;
-mod top_bar;
-mod tracks;
-mod windows;
 
 /// Favorites: saved grooves (the first four are the patterns of AUTO SONG)
 pub const SLOTS: usize = 12;

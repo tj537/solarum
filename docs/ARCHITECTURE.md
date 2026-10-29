@@ -5,7 +5,19 @@ Solarum is one Rust binary: an [egui](https://github.com/emilk/egui) window (efr
 ```
 src/
   main.rs       window setup
-  app.rs        SolarumApp: panels (top bar with the vibe dropdown, tracks (a click on the name plays the sound), the mood dropdown, sound|master/auto/live, favorites (12, named) and song strip, the record button with the AUTO SONG menu beside it (`widgets::rec_split`, `song_menu`), the settings window (with the Ko-fi card at the bottom, `update::KOFI_URL`), the FACE window (`face_viewport`)), keys, MIDI, files, recording, help, persistence
+  app/          SolarumApp, the window: panels (top bar with the vibe dropdown, tracks (a click on the name plays the sound), the mood dropdown, sound|master/auto/live, favorites (12, named) and song strip, the record button with the AUTO SONG menu beside it (`widgets::rec_split`, `song_menu`), the settings window (with the Ko-fi card at the bottom, `update::KOFI_URL`), the FACE window (`face_viewport`)), keys, MIDI, files, recording, help, persistence – one `impl SolarumApp` block per file:
+    mod.rs        the struct, `new`/`headless`, `eframe::App` (persistence), the frame loop (`ui`, `finish_frame` with the undo steps), play/roll/clear/energy and small helpers
+    project.rs    the session, new/open/save of .solarum files, the unsaved-changes prompt, the home screen
+    devices.rs    MIDI input, the audio output, the 3-second check for plugged/unplugged devices
+    history.rs    undo, redo
+    favorites.rs  favorites (slots, names, rename), the patterns strip, song mode (AUTO SONG, `song_menu`, `song_strip`)
+    tracks.rs     the track list: solo, sounds and samples per track, the track menu, rolling tracks
+    sync.rs       per frame: engine events into the UI state, the log state, pad hits, keys
+    solar_os.rs   SOLAR OS: Solari's terminal commands, verdicts, the ENERGY drive, auto effects, growing, the auto settings and the computer screen with its help
+    top_bar.rs    the top bar, the vibe list, the BPM box and the tempo menu
+    live.rs       the live panel and its controls, drops, recording the set
+    windows.rs    settings, WAV export, help, the FACE viewport and the visual toggle
+    tests.rs      the app's tests
   visual.rs     the LIGHTS visualizer: spectrum ring, kick shockwaves, star field, a small energy bar (`energy_bar`, shared), no text – drawn from `Live` only
   face.rs       the FACE visualizer: a procedural low-poly head (rings of a squared-off head profile + gaussian bumps, a jaw that starts to open late in a build-up and drops on the drop; empty, angular eye holes like a mask's, filled with what's behind (space plus the head's glow at that spot) and screen-fixed stars, burning with light in build-ups and drops, gone while it shatters; a black slit for the shut mouth that falls open with its corners down now and then (`gape`, a 7-second slot picked by hash)), flat-shaded mesh + wireframe, a nod on every beat, glitch bands and RGB split in build-ups, a drop in phases (zoom and scream with additive laser beams, glowing cracks, spinning shards that fly out and come back), every effect faded in and out so nothing switches at once
   file.rs       .solarum files (RON): song, favorites and their names, the project's sample slots and their audio (`library::Packed`)
