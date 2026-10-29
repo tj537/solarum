@@ -1,11 +1,11 @@
 # Solarum
 
-> Solarum is a free, open-source techno drum machine and beat maker for Mac and Windows. Your groove is a little solar system: every track is an orbit round the sun, every step a planet. Beginners pick a vibe and a mood instead of scales and chords; Luna, the robot in the auto mode, plays an endless techno set with breakdowns, build-ups and drops.
+> Solarum is a free, open-source techno drum machine, beat maker and sampler for Mac and Windows. Your groove is a little solar system: every track is an orbit round the sun, every step a planet. Beginners pick a vibe and a mood instead of scales and chords; since version 0.10 you can record, draw or import your own sounds; Luna, the robot in the auto mode, plays an endless techno set with breakdowns, build-ups and drops.
 
 - Made by Tom Fischer (GitHub: tj537), written in Rust, MIT license
 - Runs on macOS 11+ (Apple Silicon and Intel) and 64-bit Windows 10/11; Linux, iPad and Android tablets are planned; phones are not supported
 - No account, no ads, no tracking; the download is a few megabytes
-- Still young and changing fast ("in development")
+- Current version: 0.10.0; still young and changing fast ("in development")
 
 ## Download
 
@@ -16,21 +16,34 @@
 ## What it does
 
 - Orbit step sequencer: tracks are orbits, steps are planets, a beam of light sweeps round once a bar
-- Sounds: kick, clap, rim, hats, open hat, ride, bass and a 303-style acid line – all synthesized, no samples
+- Eight tracks: kick, clap, rim, hats, open hat, ride, bass and a 303-style acid line, with 51 built-in sounds named for space (Pulsar, Comet, Nebula …) – all synthesized
 - Ten vibes: Dub, Minimal, Melodic, Hypnotic, Electro, Peak time, Acid, Rave, Industrial, Hard – each with its own tempo, sounds and pattern rules; SHUFFLE rolls a new groove that follows the genre's rules
 - Moods instead of music theory: Dark, Hypnotic, Deep, Sad, Euphoric, Dreamy, Epic, Sunny, Mysterious – each brings its own chords
 - Auto mode (SOLAR OS with Luna): an endless DJ-style set, every change picked by ear, learns your taste from thumbs up/down; type commands like `acid`, `drop`, `mood dark`, `bpm 135`, `seed <word>` (the same word always rolls the same beat)
 - AUTO SONG turns saved favorite grooves into a whole track: intro, groove, break, build-up, drop, outro
-- Live effects, your own drawn or recorded sounds, MIDI keyboard input, WAV recording of everything you hear
+- Live effects (stutter, echo, wash, crush, gate, tape stop, filter pad), DROP, MIDI keyboard input, WAV recording of everything you hear
+- LIGHTS and FACE visualizers for a big screen or a projector
 - For experienced users: per-step accents, slides and probability, tune and decay per track, master EQ
+
+## Your own sounds (new in 0.10)
+
+- Start screen → SOUNDS → + New sound, in three steps: Start › Record or Draw › Finish
+- Record with a microphone or audio interface (up to 30 seconds; silence trimmed and level set automatically)
+- Draw a sound on a drawing board: a pitch lane and a loudness lane, blank or from a track's template (kick, clap, hat …)
+- Import WAV, AIFF, MP3, FLAC or OGG files, or drop them onto the window
+- Sampler editor: cut start and end, fade in and out, pitch, tone (thinner/darker), crush, reverse, loop, undo; the original audio is never changed
+- Every sound plays on one track; pick it in the track's sound menu under "Your sounds"; on bass and synth it follows the notes and the key
+- A project carries up to 32 of your sounds in its .solarum file, so it plays the same on another computer
+- Microphone access: macOS asks once (System Settings → Privacy & Security → Microphone); on Windows allow desktop apps under Settings → Privacy & security → Microphone
 
 ## Similar to
 
-Solarum sits between beginner beat apps (GarageBand, Groove Pizza, Chrome Music Lab) and techno drum machines (TR-808/909 and TB-303 emulations), with a generative auto mode that plays whole sets.
+Solarum sits between beginner beat apps (GarageBand, Groove Pizza, Chrome Music Lab) and techno drum machines and samplers (TR-808/909 and TB-303 emulations), with a generative auto mode that plays whole sets.
 
 ## Links
 
-- [Website](https://tj537.github.io/solarum/)
+- [Website](https://tj537.github.io/solarum/) (with a 20-question FAQ)
+- [Release notes](https://github.com/tj537/solarum/releases)
 - [Source code and README](https://github.com/tj537/solarum)
 - [Report a bug](https://github.com/tj537/solarum/issues/new?template=bug_report.yml)
 - [Support on Ko-fi](https://ko-fi.com/tj537)

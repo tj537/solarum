@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Solarum – Free Techno Drum Machine for Mac &amp; Windows</title>
-<meta name="description" content="Solarum is a free, open-source techno drum machine and beat maker for Mac and Windows. Paint a beat on a little solar system, or let Luna, the robot, play a whole set for you. No music skills needed.">
+<title>Solarum – Free Techno Drum Machine &amp; Sampler for Mac and Windows</title>
+<meta name="description" content="Solarum is a free, open-source techno drum machine and beat maker for Mac and Windows. Paint a beat on a little solar system, record or draw your own sounds, or let Luna, the robot, play a whole set for you. No music skills needed.">
 <link rel="canonical" href="https://tj537.github.io/solarum/">
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
 <meta name="author" content="Tom Fischer">
@@ -13,7 +13,7 @@
 <meta name="color-scheme" content="dark">
 <meta property="og:site_name" content="Solarum">
 <meta property="og:title" content="Solarum – techno from another planet">
-<meta property="og:description" content="A free techno drum machine for Mac and Windows. Paint a beat on a little solar system, or let Luna play a whole set. Easy, beautiful, for everyone.">
+<meta property="og:description" content="A free techno drum machine for Mac and Windows. Paint a beat on a little solar system, record your own sounds, or let Luna play a whole set. Easy, beautiful, for everyone.">
 <meta property="og:url" content="https://tj537.github.io/solarum/">
 <meta property="og:image" content="https://tj537.github.io/solarum/solarum.jpg">
 <meta property="og:image:width" content="2000">
@@ -23,7 +23,7 @@
 <meta property="og:locale" content="en_US">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Solarum – techno from another planet">
-<meta name="twitter:description" content="A free techno drum machine for Mac and Windows. Paint a beat on a little solar system, or let Luna play a whole set.">
+<meta name="twitter:description" content="A free techno drum machine for Mac and Windows. Paint a beat on a little solar system, record your own sounds, or let Luna play a whole set.">
 <meta name="twitter:image" content="https://tj537.github.io/solarum/solarum.jpg">
 <meta name="twitter:image:alt" content="Solarum: a techno drum machine where every track is an orbit round a sun and every step a planet">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -58,7 +58,8 @@
       "@id": "https://tj537.github.io/solarum/#app",
       "name": "Solarum",
       "alternateName": "Solarum drum machine",
-      "description": "Solarum is a free, open-source techno drum machine and beat maker for Mac and Windows. Your groove is a little solar system: every track is an orbit round the sun, every step a planet. Pick a vibe and a mood instead of scales and chords, or switch on Luna, the robot in the auto mode, and it plays an endless techno set with breakdowns, build-ups and drops.",
+      "description": "Solarum is a free, open-source techno drum machine, beat maker and sampler for Mac and Windows. Your groove is a little solar system: every track is an orbit round the sun, every step a planet. Pick a vibe and a mood instead of scales and chords, record, draw or import your own sounds, or switch on Luna, the robot in the auto mode, and it plays an endless techno set with breakdowns, build-ups and drops.",
+      "softwareVersion": "0.10.0",
       "url": "https://tj537.github.io/solarum/",
       "applicationCategory": "MultimediaApplication",
       "applicationSubCategory": "Drum machine",
@@ -70,14 +71,22 @@
       ],
       "installUrl": "https://tj537.github.io/solarum/#download",
       "releaseNotes": "https://github.com/tj537/solarum/releases",
-      "screenshot": "https://tj537.github.io/solarum/solarum.jpg",
+      "screenshot": [
+        { "@type": "ImageObject", "url": "https://tj537.github.io/solarum/solarum.jpg", "width": 2000, "height": 1264, "caption": "Solarum's planets view with Luna's auto mode, the sound section, live effects and DROP" },
+        { "@type": "ImageObject", "url": "https://tj537.github.io/solarum/shot-sounds.jpg", "width": 1600, "height": 1011, "caption": "The sound editor: cut, fade, pitch, tone, crush and reverse your own recorded sound" },
+        { "@type": "ImageObject", "url": "https://tj537.github.io/solarum/shot-draw.jpg", "width": 1600, "height": 1011, "caption": "The drawing board: draw a sound's pitch and loudness by hand" },
+        { "@type": "ImageObject", "url": "https://tj537.github.io/solarum/shot-record.jpg", "width": 1600, "height": 1011, "caption": "Recording your own sound with the microphone" },
+        { "@type": "ImageObject", "url": "https://tj537.github.io/solarum/shot-pads.jpg", "width": 1600, "height": 1011, "caption": "The classic view: sound pads and a step grid" },
+        { "@type": "ImageObject", "url": "https://tj537.github.io/solarum/shot-home.jpg", "width": 1600, "height": 1011, "caption": "The start screen with recent projects" },
+        { "@type": "ImageObject", "url": "https://tj537.github.io/solarum/shot-lights.jpg", "width": 1600, "height": 1011, "caption": "LIGHTS, the visualizer for a big screen or a projector" }
+      ],
       "image": "https://tj537.github.io/solarum/icon.png",
       "isAccessibleForFree": true,
       "license": "https://opensource.org/licenses/MIT",
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR", "availability": "https://schema.org/InStock" },
       "author": { "@id": "https://tj537.github.io/solarum/#author" },
       "sameAs": ["https://github.com/tj537/solarum"],
-      "keywords": "techno, drum machine, beat maker, groove box, step sequencer, 303 acid bassline, generative music, auto DJ, free music software, open source",
+      "keywords": "techno, drum machine, beat maker, sampler, record your own sounds, groove box, step sequencer, 303 acid bassline, generative music, auto DJ, free music software, open source",
       "featureList": [
         "Orbit step sequencer: every track is an orbit, every step a planet",
         "Kick, clap, rim, hats, ride, bass and a 303-style acid line, all synthesized",
@@ -85,7 +94,12 @@
         "Moods instead of music theory: pick Dark, Euphoric or Dreamy and the chords come with it",
         "Auto mode with Luna: an endless set with breakdowns, build-ups and drops that learns your taste",
         "AUTO SONG turns your favorite grooves into a whole track",
-        "Live effects, your own sounds, MIDI keyboard input and WAV recording"
+        "Your own sounds: record them with a microphone, draw them on a drawing board or import WAV, AIFF, MP3, FLAC and OGG files",
+        "A sampler editor: cut, fade, pitch, tone, crush and reverse; every sound plays on one track and follows the key on bass and synth",
+        "Projects carry their own sounds along (up to 32 per project), so they play the same on another computer",
+        "51 built-in sounds named for space, all synthesized",
+        "Live effects, MIDI keyboard input and WAV recording of everything you hear",
+        "LIGHTS and FACE visualizers for a big screen or a projector"
       ]
     },
     {
@@ -102,14 +116,26 @@
       "@type": "FAQPage",
       "@id": "https://tj537.github.io/solarum/#faq",
       "mainEntity": [
-        { "@type": "Question", "name": "What is Solarum?", "acceptedAnswer": { "@type": "Answer", "text": "Solarum is a free techno drum machine and beat maker for Mac and Windows. Your groove is a little solar system: every track is an orbit round the sun, every step a planet, and a beam of light sweeps round once a bar. Kick, clap, rim, hats, ride, bass and a 303-style acid line are all synthesized – no samples needed." } },
-        { "@type": "Question", "name": "Is Solarum free?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Solarum is free and open source under the MIT license. There is no account, no ads and no tracking." } },
+        { "@type": "Question", "name": "What is Solarum?", "acceptedAnswer": { "@type": "Answer", "text": "Solarum is a free techno drum machine, beat maker and sampler for Mac and Windows. Your groove is a little solar system: every track is an orbit round the sun, every step a planet, and a beam of light sweeps round once a bar. Kick, clap, rim, hats, ride, bass and a 303-style acid line are all synthesized – 51 built-in sounds – and since version 0.10 you can record, draw or import your own sounds too." } },
+        { "@type": "Question", "name": "Is Solarum free?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Solarum is free and open source under the MIT license. There is no account, no ads and no tracking. If you like it, you can support it on Ko-fi." } },
         { "@type": "Question", "name": "Which computers does Solarum run on?", "acceptedAnswer": { "@type": "Answer", "text": "Solarum runs on macOS 11 or later (Apple Silicon and Intel) and on 64-bit Windows 10 and 11. The download is a few megabytes. Linux, iPad and Android tablets are planned; phones are not supported." } },
         { "@type": "Question", "name": "Do I need to know anything about music to use Solarum?", "acceptedAnswer": { "@type": "Answer", "text": "No. You pick a vibe and a mood like Dark, Euphoric or Dreamy instead of scales and chords, and SHUFFLE rolls a groove that follows the rules of techno. If you do know what you're doing, you still get per-step accents, slides and probability, tune and decay per track, a master EQ, MIDI in and WAV recording." } },
+        { "@type": "Question", "name": "Can I record my own sounds in Solarum?", "acceptedAnswer": { "@type": "Answer", "text": "Yes, since version 0.10. Open SOUNDS on the start screen and press + New sound, choose Record, pick your microphone or audio interface and press the big red button. Your voice, a door, a glass, a beatboxed kick – anything works. A sound can be up to 30 seconds long; the silence at the start and end is trimmed and the level is set for you." } },
+        { "@type": "Question", "name": "How do I put my own sound into a beat?", "acceptedAnswer": { "@type": "Answer", "text": "Every sound belongs to one track: kick, clap, rim, hat, open hat, ride, bass or synth. When you finish a sound, pick its track and press Save. Then choose it in that track's sound menu under Your sounds, or press Use on … in SOUNDS. Your sound plays like a one-shot at the level of the built-in sounds; on bass and synth it follows the notes and the key." } },
+        { "@type": "Question", "name": "Which audio files can I import?", "acceptedAnswer": { "@type": "Answer", "text": "WAV, AIFF, MP3, FLAC and OGG. Choose Import under + New sound, or simply drop the files onto the Solarum window. Each sound can be up to 30 seconds long." } },
+        { "@type": "Question", "name": "Can I make a sound without a microphone?", "acceptedAnswer": { "@type": "Answer", "text": "Yes, draw it. Start from a blank drawing board or paint over a track's template – a kick's falling pitch, a clap's three slaps, a hat's hiss. Draw the pitch in one lane and the loudness in the other, pick Soft, Bright or Air and a length, and you hear it after every stroke. Pen, eraser and undo are right there." } },
+        { "@type": "Question", "name": "What can I change about a sound after recording it?", "acceptedAnswer": { "@type": "Answer", "text": "The editor works like a sampler: drag the white bars to cut the start and end, drag the top edge to fade in or out, change the pitch, make it thinner or darker with Tone, add lo-fi grit with Crush, or Reverse it. The waveform shows every change, Loop plays it over and over, everything can be undone, and the original audio is never touched." } },
+        { "@type": "Question", "name": "Do my sounds come along when I send a project to a friend?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. A saved .solarum project carries the sounds it uses – up to 32 per project – so it plays the same on another computer. Projects from other people are checked before they play: oversized files are refused and packed sounds are limited to 30 seconds each." } },
+        { "@type": "Question", "name": "Why can't Solarum hear my microphone?", "acceptedAnswer": { "@type": "Answer", "text": "Your computer has to allow it. On a Mac, macOS asks once whether Solarum may use the microphone; if you said no, open System Settings → Privacy & Security → Microphone and switch Solarum on. On Windows, open Settings → Privacy & security → Microphone and allow desktop apps to access it. Then pick the right input above the record button." } },
         { "@type": "Question", "name": "Who is Luna?", "acceptedAnswer": { "@type": "Answer", "text": "Luna is the little robot inside SOLAR OS, Solarum's auto mode. Switch it on and Luna plays an endless set like a DJ: grooves that change, breakdowns, build-ups and drops. It picks every change by ear, learns your taste from a thumb up or down, and answers commands like acid, drop, mood dark or bpm 135." } },
         { "@type": "Question", "name": "Which kinds of techno can Solarum play?", "acceptedAnswer": { "@type": "Answer", "text": "Ten vibes: Dub, Minimal, Melodic, Hypnotic, Electro, Peak time, Acid, Rave, Industrial and Hard – each with its own tempo, sounds and pattern rules." } },
-        { "@type": "Question", "name": "Can I record my beats or use my own sounds?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. The record button records everything you hear – your beat, the auto mode, songs and effects – as a WAV file. You can also draw or record your own sounds and cut them like a sampler, and play everything from a MIDI keyboard." } },
-        { "@type": "Question", "name": "Why does my Mac warn me when I open Solarum the first time?", "acceptedAnswer": { "@type": "Answer", "text": "Solarum doesn't carry Apple's paid developer signature yet, so macOS asks once. Open System Settings → Privacy & Security, scroll down and click Open Anyway next to Solarum. After that it opens with a normal double-click." } }
+        { "@type": "Question", "name": "Can I save my beats as an audio file?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. The record button (or the R key) records everything you hear – your beat, Luna's set, a whole AUTO SONG and the live effects – and saves it as a WAV file, ready to share or to use in other music software." } },
+        { "@type": "Question", "name": "Can I play Solarum with a MIDI keyboard?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Plug one in, even while Solarum runs. Keys below middle C play the sounds (C kick, D clap, E rim, F hat, G open hat, A ride, B bass), keys from middle C up transpose bass and synth live, and the mod wheel, pitch bend and sustain pedal play acid, filter and echo." } },
+        { "@type": "Question", "name": "Can I use Solarum live or on a projector?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Hold the live effects – stutter, echo, wash, crush, gate, tape stop and a filter pad – and press DROP for a build-up and a drop. Two visualizers, LIGHTS and FACE, show the music without any text; FACE opens in a window of its own, so you can drag it to a projector and keep playing." } },
+        { "@type": "Question", "name": "Why does my Mac warn me when I open Solarum the first time?", "acceptedAnswer": { "@type": "Answer", "text": "Solarum doesn't carry Apple's paid developer signature yet, so macOS asks once. Open System Settings → Privacy & Security, scroll down and click Open Anyway next to Solarum. After that it opens with a normal double-click." } },
+        { "@type": "Question", "name": "What does \"Windows protected your PC\" mean?", "acceptedAnswer": { "@type": "Answer", "text": "Solarum doesn't carry Microsoft's paid code signature yet, so Windows SmartScreen asks once. Click More info, then Run anyway. After that Solarum starts like any other app – no installer and no admin rights needed." } },
+        { "@type": "Question", "name": "Are my projects safe when I update Solarum?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Your work is saved automatically, projects from older versions still load, and saving never leaves half a file, even if the computer crashes in the middle of it. Solarum tells you at launch when a new version is out; you can switch that check off in the settings." } },
+        { "@type": "Question", "name": "How can I help?", "acceptedAnswer": { "@type": "Answer", "text": "Solarum is young and changes fast. Report a bug, share an idea, give it a star on GitHub, or support it on Ko-fi. The code is open, so contributions are welcome too." } }
       ]
     }
   ]
@@ -399,6 +425,58 @@ footer a.kofi:hover { background: var(--acid); color: var(--space); }
   footer a.kofi:hover { filter: brightness(1.08); }
 }
 
+/* what's new pill */
+.new-pill { display: inline-flex; align-items: center; gap: 10px; margin-bottom: 18px; padding: 6px 14px 6px 6px; border-radius: 999px; text-decoration: none; font-size: 14px; color: var(--text); background: rgba(16,17,25,.7); border: 1px solid color-mix(in srgb, var(--red) 45%, var(--line)); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); transition: border-color .2s; }
+.new-pill:hover { border-color: var(--red); }
+.new-pill b { font: 700 11px/1 "Space Grotesk", sans-serif; letter-spacing: .14em; text-transform: uppercase; color: #fff; background: var(--red); padding: 6px 10px; border-radius: 999px; }
+.new-pill i { font-style: normal; color: var(--red); }
+
+/* screenshot viewer */
+.shot-tabs { margin-top: 40px; flex-wrap: wrap; border-radius: 22px; }
+.shot-tabs button { padding: 9px 18px; }
+.stage { position: relative; aspect-ratio: 1600 / 1011; background: #05060d; }
+.stage img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .5s; }
+.stage img.on { opacity: 1; }
+.shot-cap { margin: 16px 0 0; color: var(--faint); font-size: 14.5px; min-height: 1.6em; }
+
+/* your own sounds */
+#sounds { background: radial-gradient(ellipse 70% 50% at 80% 10%, rgba(255,59,70,.10), transparent 70%); }
+.sound-grid { display: grid; grid-template-columns: 360px 1fr; gap: clamp(24px, 4vw, 48px); align-items: start; margin-top: 56px; }
+@media (max-width: 960px) { .sound-grid { grid-template-columns: 1fr; } .sound-grid .ways { order: 2; } }
+.ways { display: grid; gap: 12px; }
+@media (max-width: 960px) and (min-width: 561px) { .ways { grid-template-columns: repeat(3, 1fr); } }
+.way { text-align: left; font: inherit; color: inherit; cursor: pointer; display: grid; grid-template-columns: 44px 1fr; gap: 4px 14px; padding: 18px; border-radius: 20px; background: var(--panel); border: 1px solid var(--line); transition: border-color .25s, background .25s, transform .25s; }
+.way:hover { transform: translateY(-2px); }
+.way[aria-selected="true"] { border-color: var(--c); background: linear-gradient(135deg, color-mix(in srgb, var(--c) 12%, var(--panel)), var(--panel)); }
+.way .ic { grid-row: span 2; width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; color: var(--c); background: color-mix(in srgb, var(--c) 16%, transparent); }
+.way .ic svg { width: 24px; height: 24px; }
+.way b { font-size: 18px; align-self: end; }
+.way b small { font-size: 12px; font-weight: 500; color: var(--faint); letter-spacing: .1em; margin-left: 6px; }
+.way span { color: var(--dim); font-size: 15px; line-height: 1.5; }
+.sound-grid .window-wrap { margin-top: 0; }
+.tools { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+.tools span { font-size: 14px; color: var(--dim); padding: 6px 13px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); }
+.tools span::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 8px; vertical-align: 1px; background: var(--c, var(--acid)); }
+.facts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin-top: 56px; padding-top: 34px; border-top: 1px solid var(--line); }
+@media (max-width: 800px) { .facts { grid-template-columns: 1fr 1fr; } }
+.facts div { color: var(--dim); font-size: 15px; }
+.facts b { display: block; font: 400 clamp(40px, 5vw, 58px)/1 "Anton", sans-serif; color: var(--text); margin-bottom: 8px; }
+.facts b em { font-style: normal; font-size: .45em; color: var(--red); margin-left: 4px; letter-spacing: .04em; }
+
+/* what's new */
+.news { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin-top: 44px; }
+@media (max-width: 900px) { .news { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 560px) { .news { grid-template-columns: 1fr; } }
+.news div { padding: 22px; border-radius: 20px; border: 1px solid var(--line); background: linear-gradient(180deg, var(--panel-hi), var(--panel)); border-top: 2px solid var(--c); }
+.news b { display: block; font-size: 17px; margin-bottom: 6px; }
+.news p { margin: 0; color: var(--dim); font-size: 15px; }
+
+/* faq groups */
+.faq-cat { margin: 34px 0 2px; font: 700 13px/1 "Space Grotesk", sans-serif; letter-spacing: .22em; text-transform: uppercase; color: var(--c, var(--faint)); }
+.faq .faq-cat:first-child { margin-top: 0; }
+.faq details p code { color: var(--acid); font-size: .92em; }
+.faq details p a { color: var(--acid); }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .reveal { opacity: 1; transform: none; }
@@ -412,6 +490,7 @@ footer a.kofi:hover { background: var(--acid); color: var(--space); }
   <a class="brand" href="#top"><img src="icon.svg" alt=""><span>SOLARUM</span></a>
   <div class="links">
     <a href="#journey">The trip</a>
+    <a href="#sounds">Your sounds</a>
     <a href="#luna">Luna</a>
     <a href="#features">Features</a>
     <a href="#faq">FAQ</a>
@@ -425,9 +504,10 @@ footer a.kofi:hover { background: var(--acid); color: var(--space); }
 <header class="hero" id="top">
   <canvas id="sky" aria-hidden="true"></canvas>
   <div class="wrap">
+    <a class="new-pill reveal" href="#sounds"><b>New in 0.10</b>Record your own sounds <i>→</i></a>
     <div class="eyebrow reveal">Free · Mac &amp; Windows · in development</div>
     <h1 class="display reveal d1">Solarum</h1>
-    <p class="lead reveal d2"><b>Techno from another planet.</b> Board the ship, fly into a little solar system and make beats by touching planets. Easy, beautiful, for everyone.</p>
+    <p class="lead reveal d2"><b>Techno from another planet.</b> Board the ship, fly into a little solar system and make beats by touching planets – with 51 sounds from space or your very own. Easy, beautiful, for everyone.</p>
     <div class="dl-row reveal d3">
       <a class="btn mac" id="btn-mac" href="https://github.com/tj537/solarum/releases/latest/download/Solarum-macos-universal.zip">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.4 12.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9-1.7 0-3.3 1-4.2 2.6-1.8 3.1-.5 7.7 1.3 10.2.8 1.2 1.8 2.6 3.1 2.6 1.2-.1 1.7-.8 3.2-.8s1.9.8 3.2.8c1.3 0 2.2-1.2 3-2.4.9-1.4 1.3-2.7 1.3-2.8 0 0-2.6-1-2.1-4.3zM13.9 5c.7-.8 1.1-1.9 1-3-1 0-2.1.7-2.8 1.5-.6.7-1.2 1.8-1 2.9 1.1.1 2.1-.6 2.8-1.4z"/></svg>
@@ -523,18 +603,81 @@ footer a.kofi:hover { background: var(--acid); color: var(--space); }
   <div class="wrap">
     <div class="eyebrow reveal">Inside the ship</div>
     <h2 class="display reveal">Your beat is a solar system.</h2>
-    <p class="sub reveal">Every sound has its own colour. Bass and synth planets float on stalks, the higher the note, the higher they float. Drag them and they sing.</p>
-    <div class="window-wrap">
+    <p class="sub reveal">Every sound has its own colour. Bass and synth planets float on stalks, the higher the note, the higher they float. Drag them and they sing. Prefer a grid? One click and it's a classic drum machine.</p>
+    <div class="tabs shot-tabs reveal" role="tablist" aria-label="Screens of Solarum" data-viewer="look-shots">
+      <button type="button" role="tab" aria-selected="true">Planets</button>
+      <button type="button" role="tab" aria-selected="false">Classic pads</button>
+      <button type="button" role="tab" aria-selected="false">Start screen</button>
+      <button type="button" role="tab" aria-selected="false">Lights</button>
+    </div>
+    <div class="window-wrap" style="margin-top:22px">
       <div class="window" id="shot">
         <div class="bar"><i></i><i></i><i></i></div>
-        <img src="solarum.jpg" width="2000" height="1264" loading="lazy" alt="Solarum in auto mode: the planets in the middle, tracks and Luna's terminal on the left, sound pads, effects and the DROP button on the right, favorites below">
+        <div class="stage" id="look-shots">
+          <img class="on" src="solarum.jpg" width="2000" height="1264" loading="lazy" alt="Solarum in auto mode: the planets in the middle, tracks and Luna's SOLAR OS terminal on the left, sound section, live effects and the DROP button on the right, favorites below" data-cap="The planets view while Luna plays a set: tracks on the left, the sound and live effects on the right, favorites below.">
+          <img src="shot-pads.jpg" width="1600" height="1011" loading="lazy" alt="Solarum's classic view: eight big sound pads above a colourful 16-step grid, one row per track" data-cap="The classic view: play the pads with your keys A to K and paint steps on a grid, like a hardware drum machine.">
+          <img src="shot-home.jpg" width="1600" height="1011" loading="lazy" alt="Solarum's start screen: a big green sun, New project, Open and Sounds buttons, and recent projects as little pictures of their grooves" data-cap="The start screen: new project, your recent projects as little pictures of their grooves, and SOUNDS, your own sound library.">
+          <img src="shot-lights.jpg" width="1600" height="1011" loading="lazy" alt="LIGHTS, Solarum's visualizer: glowing pink rings and a spectrum pulsing with the music in a star field" data-cap="LIGHTS and FACE, two visualizers for the big screen or a projector – no text, just the music.">
+        </div>
       </div>
     </div>
+    <p class="shot-cap" data-cap-for="look-shots">The planets view while Luna plays a set: tracks on the left, the sound and live effects on the right, favorites below.</p>
     <div class="callouts">
       <div class="reveal" style="--c:var(--kick)"><b>Planets</b>Click the sky to place a beat, drag to paint.</div>
       <div class="reveal d1" style="--c:var(--acid)"><b>The sun</b>Press it to play. It shines in the colour of the energy.</div>
       <div class="reveal d2" style="--c:var(--ohat)"><b>Energy</b>One fader from quiet break to full drop.</div>
       <div class="reveal d3" style="--c:var(--ride)"><b>Favorites</b>Keep grooves and turn them into a whole song.</div>
+    </div>
+  </div>
+</section>
+
+<section id="sounds">
+  <div class="wrap">
+    <div class="eyebrow reveal" style="color:var(--red)">New in 0.10 · your own sounds</div>
+    <h2 class="display reveal">Make it sound<br>like you.</h2>
+    <p class="sub reveal">Clap into your microphone, knock on the table, beatbox a kick – or draw a sound with the mouse. Solarum turns it into an instrument on one of its tracks, right next to the 51 built-in sounds. Open <b>SOUNDS</b> on the start screen and press <b>+ New sound</b>: <i>Start › Record or Draw › Finish</i>, with Cancel and Back always in the same place.</p>
+
+    <div class="sound-grid">
+      <div class="ways reveal" role="tablist" aria-label="Ways to make a sound" data-viewer="sound-shots">
+        <button class="way" type="button" role="tab" aria-selected="true" style="--c:var(--red)">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg></span>
+          <b>Record <small>MIC</small></b>
+          <span>Pick your microphone or audio interface and press the big red button. Up to 30 seconds; the silence is trimmed and the level set for you.</span>
+        </button>
+        <button class="way" type="button" role="tab" aria-selected="false" style="--c:var(--kick)">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17c3-9 5-9 7-4s4 5 7-4 4 0 4 0"/><path d="M15 20l5-5"/></svg></span>
+          <b>Draw <small>NO MIC NEEDED</small></b>
+          <span>Paint the pitch and the loudness on a drawing board, or start from a track's template – a kick's falling line, a clap's three slaps.</span>
+        </button>
+        <button class="way" type="button" role="tab" aria-selected="false" style="--c:var(--clap)">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12h2M7 7v10M11 4v16M15 8v8M19 10v4M21 12h0"/></svg></span>
+          <b>Import &amp; shape <small>WAV · MP3 · …</small></b>
+          <span>Drop a WAV, AIFF, MP3, FLAC or OGG file onto the window. Then cut it like a sampler and pick the track it plays on.</span>
+        </button>
+      </div>
+      <div class="reveal d1">
+        <div class="window-wrap">
+          <div class="window in">
+            <div class="bar"><i></i><i></i><i></i></div>
+            <div class="stage" id="sound-shots">
+              <img class="on" src="shot-record.jpg" width="1600" height="1011" loading="lazy" alt="Recording a sound in Solarum: pick the input, then press the big red record button" data-cap="Record: your voice, a door, a glass – anything. What you record shows up as a waveform right away.">
+              <img src="shot-draw.jpg" width="1600" height="1011" loading="lazy" alt="Solarum's drawing board: a red pitch line falling like a kick drum above a fading loudness lane, with pen, eraser, undo and Soft, Bright and Air buttons" data-cap="Draw: higher is higher, gaps are silence. You hear it after every stroke – with Loop over and over.">
+              <img src="shot-sounds.jpg" width="1600" height="1011" loading="lazy" alt="Solarum's sound editor: an orange waveform of a pot-and-pan loop with cut bars, the track picker, and cards for pitch, tone, crush and reverse" data-cap="Shape: cut, fade, pitch, tone, crush and reverse. The waveform shows the sound exactly as it will play.">
+            </div>
+          </div>
+        </div>
+        <p class="shot-cap" data-cap-for="sound-shots">Record: your voice, a door, a glass – anything. What you record shows up as a waveform right away.</p>
+        <div class="tools">
+          <span style="--c:var(--kick)">Cut start &amp; end</span><span style="--c:var(--clap)">Fade in &amp; out</span><span style="--c:var(--rim)">Pitch</span><span style="--c:var(--hat)">Tone: thinner or darker</span><span style="--c:var(--ohat)">Crush</span><span style="--c:var(--ride)">Reverse</span><span style="--c:var(--bass)">Loop</span><span>Undo everything</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="facts">
+      <div class="reveal"><b>30<em>SEC</em></b>per sound – plenty for a hit, a word or a short loop</div>
+      <div class="reveal d1"><b>5<em>FORMATS</em></b>WAV, AIFF, MP3, FLAC and OGG to import</div>
+      <div class="reveal d2"><b>32<em>PER PROJECT</em></b>sounds of your own in one project, packed into its file</div>
+      <div class="reveal d3"><b>8<em>TRACKS</em></b>to play them on – on bass and synth they follow the notes</div>
     </div>
   </div>
 </section>
@@ -564,13 +707,27 @@ footer a.kofi:hover { background: var(--acid); color: var(--space); }
   </div>
 </section>
 
+<section id="new" style="padding-top:0">
+  <div class="wrap">
+    <div class="eyebrow reveal">Solarum 0.10</div>
+    <h2 class="display reveal">What's new.</h2>
+    <div class="news">
+      <div class="reveal" style="--c:var(--red)"><b>Your own sounds</b><p>Record, draw or import them, shape them in the editor and play them on any track. Projects take them along.</p></div>
+      <div class="reveal d1" style="--c:var(--clap)"><b>17 new sounds</b><p>51 in all, from kicks to supersaws, named for space – <i>Pulsar</i>, <i>Comet</i>, <i>Nebula</i> – and balanced so switching never jumps in volume.</p></div>
+      <div class="reveal d2" style="--c:var(--acid)"><b>Luna listens</b><p>Every change is picked by ear, a thumb up or down teaches it your taste, and the map shows where the drop lands.</p></div>
+      <div class="reveal d3" style="--c:var(--ohat)"><b>Sturdier</b><p>Saving never leaves half a file, projects from others are checked before they play, and a broken sound can't silence the engine.</p></div>
+    </div>
+    <p class="sub reveal" style="margin-top:28px;font-size:16px">All changes are in the <a href="https://github.com/tj537/solarum/releases" style="color:var(--acid)">release notes</a>.</p>
+  </div>
+</section>
+
 <section id="features" style="padding-top:0">
   <div class="wrap">
     <div class="eyebrow reveal">On board</div>
     <h2 class="display reveal">Everything you need.<br>Nothing you don't.</h2>
     <div class="features">
       <div class="feat reveal" style="--c:var(--kick)"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg></div><h3>Ten vibes</h3><p>Dub, Minimal, Melodic, Hypnotic, Electro, Peak time, Acid, Rave, Industrial, Hard. Each with its own tempo, sounds and rules.</p></div>
-      <div class="feat reveal d1" style="--c:var(--clap)"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 18V8M9 18V4M14 18v-7M19 18V6"/></svg></div><h3>51 sounds + your own</h3><p>Kicks, claps, hats, rides, seven basses and a synth from 303 to pads, all made live and named for space. Draw, record or import your own and shape them right in the app.</p></div>
+      <div class="feat reveal d1" style="--c:var(--clap)"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 18V8M9 18V4M14 18v-7M19 18V6"/></svg></div><h3>51 sounds + your own</h3><p>Kicks, claps, hats, rides, seven basses and a synth from 303 to pads, all made live and named for space. <a href="#sounds" style="color:var(--acid)">Record, draw or import your own</a> and shape them right in the app.</p></div>
       <div class="feat reveal d2" style="--c:var(--rim)"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M5 9l7-6 7 6"/></svg></div><h3>Energy &amp; DROP</h3><p>One fader is the whole arrangement. Press DROP for a two-bar build-up, a breath of silence, then everything hits.</p></div>
       <div class="feat reveal" style="--c:var(--hat)"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h3l2-6 4 12 3-9 2 3h4"/></svg></div><h3>Live effects</h3><p>Stutter, echo, wash, crush, gate, tape stop and a filter pad. Hold a button, let go to come back.</p></div>
       <div class="feat reveal d1" style="--c:var(--red)"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/></svg></div><h3>Record your set</h3><p>One button records everything you hear and saves it as a WAV, ready to share.</p></div>
@@ -643,14 +800,33 @@ footer a.kofi:hover { background: var(--acid); color: var(--space); }
     <div class="eyebrow reveal">Questions</div>
     <h2 class="display reveal">Good to know.</h2>
     <div class="faq">
-      <details class="reveal" open><summary><h3>What is Solarum?</h3></summary><p>Solarum is a free techno drum machine and beat maker for Mac and Windows. Your groove is a little solar system: every track is an orbit round the sun, every step a planet, and a beam of light sweeps round once a bar. Kick, clap, rim, hats, ride, bass and a 303-style acid line are all synthesized – no samples needed.</p></details>
-      <details class="reveal"><summary><h3>Is Solarum free?</h3></summary><p>Yes. Solarum is free and open source under the MIT license. There is no account, no ads and no tracking.</p></details>
+      <div class="faq-cat reveal" style="--c:var(--acid)">Getting started</div>
+      <details class="reveal" open><summary><h3>What is Solarum?</h3></summary><p>Solarum is a free techno drum machine, beat maker and sampler for Mac and Windows. Your groove is a little solar system: every track is an orbit round the sun, every step a planet, and a beam of light sweeps round once a bar. Kick, clap, rim, hats, ride, bass and a 303-style acid line are all synthesized – 51 built-in sounds – and since version 0.10 you can record, draw or import your own sounds too.</p></details>
+      <details class="reveal"><summary><h3>Is Solarum free?</h3></summary><p>Yes. Solarum is free and open source under the MIT license. There is no account, no ads and no tracking. If you like it, you can support it on Ko-fi.</p></details>
       <details class="reveal"><summary><h3>Which computers does Solarum run on?</h3></summary><p>Solarum runs on macOS 11 or later (Apple Silicon and Intel) and on 64-bit Windows 10 and 11. The download is a few megabytes. Linux, iPad and Android tablets are planned; phones are not supported.</p></details>
       <details class="reveal"><summary><h3>Do I need to know anything about music to use Solarum?</h3></summary><p>No. You pick a vibe and a mood like <i>Dark</i>, <i>Euphoric</i> or <i>Dreamy</i> instead of scales and chords, and SHUFFLE rolls a groove that follows the rules of techno. If you do know what you're doing, you still get per-step accents, slides and probability, tune and decay per track, a master EQ, MIDI in and WAV recording.</p></details>
+
+      <div class="faq-cat reveal" style="--c:var(--red)">Your own sounds</div>
+      <details class="reveal"><summary><h3>Can I record my own sounds in Solarum?</h3></summary><p>Yes, since version 0.10. Open SOUNDS on the start screen and press <i>+ New sound</i>, choose <i>Record</i>, pick your microphone or audio interface and press the big red button. Your voice, a door, a glass, a beatboxed kick – anything works. A sound can be up to 30 seconds long; the silence at the start and end is trimmed and the level is set for you.</p></details>
+      <details class="reveal"><summary><h3>How do I put my own sound into a beat?</h3></summary><p>Every sound belongs to one track: kick, clap, rim, hat, open hat, ride, bass or synth. When you finish a sound, pick its track and press <i>Save</i>. Then choose it in that track's sound menu under <i>Your sounds</i>, or press <i>Use on …</i> in SOUNDS. Your sound plays like a one-shot at the level of the built-in sounds; on bass and synth it follows the notes and the key.</p></details>
+      <details class="reveal"><summary><h3>Which audio files can I import?</h3></summary><p>WAV, AIFF, MP3, FLAC and OGG. Choose <i>Import</i> under <i>+ New sound</i>, or simply drop the files onto the Solarum window. Each sound can be up to 30 seconds long.</p></details>
+      <details class="reveal"><summary><h3>Can I make a sound without a microphone?</h3></summary><p>Yes, draw it. Start from a blank drawing board or paint over a track's template – a kick's falling pitch, a clap's three slaps, a hat's hiss. Draw the pitch in one lane and the loudness in the other, pick <i>Soft</i>, <i>Bright</i> or <i>Air</i> and a length, and you hear it after every stroke. Pen, eraser and undo are right there.</p></details>
+      <details class="reveal"><summary><h3>What can I change about a sound after recording it?</h3></summary><p>The editor works like a sampler: drag the white bars to cut the start and end, drag the top edge to fade in or out, change the pitch, make it thinner or darker with <i>Tone</i>, add lo-fi grit with <i>Crush</i>, or <i>Reverse</i> it. The waveform shows every change, <i>Loop</i> plays it over and over, everything can be undone, and the original audio is never touched.</p></details>
+      <details class="reveal"><summary><h3>Do my sounds come along when I send a project to a friend?</h3></summary><p>Yes. A saved .solarum project carries the sounds it uses – up to 32 per project – so it plays the same on another computer. Projects from other people are checked before they play: oversized files are refused and packed sounds are limited to 30 seconds each.</p></details>
+      <details class="reveal"><summary><h3>Why can't Solarum hear my microphone?</h3></summary><p>Your computer has to allow it. On a Mac, macOS asks once whether Solarum may use the microphone; if you said no, open <i>System Settings → Privacy &amp; Security → Microphone</i> and switch Solarum on. On Windows, open <i>Settings → Privacy &amp; security → Microphone</i> and allow desktop apps to access it. Then pick the right input above the record button.</p></details>
+
+      <div class="faq-cat reveal" style="--c:var(--ohat)">Making music</div>
       <details class="reveal"><summary><h3>Who is Luna?</h3></summary><p>Luna is the little robot inside SOLAR OS, Solarum's auto mode. Switch it on and Luna plays an endless set like a DJ: grooves that change, breakdowns, build-ups and drops. It picks every change by ear, learns your taste from a thumb up or down, and answers commands like <code>acid</code>, <code>drop</code>, <code>mood dark</code> or <code>bpm 135</code>.</p></details>
       <details class="reveal"><summary><h3>Which kinds of techno can Solarum play?</h3></summary><p>Ten vibes: Dub, Minimal, Melodic, Hypnotic, Electro, Peak time, Acid, Rave, Industrial and Hard – each with its own tempo, sounds and pattern rules.</p></details>
-      <details class="reveal"><summary><h3>Can I record my beats or use my own sounds?</h3></summary><p>Yes. The record button records everything you hear – your beat, the auto mode, songs and effects – as a WAV file. You can also draw or record your own sounds and cut them like a sampler, and play everything from a MIDI keyboard.</p></details>
-      <details class="reveal"><summary><h3>Why does my Mac warn me when I open Solarum the first time?</h3></summary><p>Solarum doesn't carry Apple's paid developer signature yet, so macOS asks once. Open <i>System Settings → Privacy &amp; Security</i>, scroll down and click <i>Open Anyway</i> next to Solarum. After that it opens with a normal double-click. <a href="#download" style="color:var(--acid)">Step by step ↑</a></p></details>
+      <details class="reveal"><summary><h3>Can I save my beats as an audio file?</h3></summary><p>Yes. The record button (or the R key) records everything you hear – your beat, Luna's set, a whole AUTO SONG and the live effects – and saves it as a WAV file, ready to share or to use in other music software.</p></details>
+      <details class="reveal"><summary><h3>Can I play Solarum with a MIDI keyboard?</h3></summary><p>Yes. Plug one in, even while Solarum runs. Keys below middle C play the sounds (C kick, D clap, E rim, F hat, G open hat, A ride, B bass), keys from middle C up transpose bass and synth live, and the mod wheel, pitch bend and sustain pedal play acid, filter and echo.</p></details>
+      <details class="reveal"><summary><h3>Can I use Solarum live or on a projector?</h3></summary><p>Yes. Hold the live effects – stutter, echo, wash, crush, gate, tape stop and a filter pad – and press DROP for a build-up and a drop. Two visualizers, LIGHTS and FACE, show the music without any text; FACE opens in a window of its own, so you can drag it to a projector and keep playing.</p></details>
+
+      <div class="faq-cat reveal" style="--c:var(--rim)">Install &amp; updates</div>
+      <details class="reveal"><summary><h3>Why does my Mac warn me when I open Solarum the first time?</h3></summary><p>Solarum doesn't carry Apple's paid developer signature yet, so macOS asks once. Open <i>System Settings → Privacy &amp; Security</i>, scroll down and click <i>Open Anyway</i> next to Solarum. After that it opens with a normal double-click. <a href="#download">Step by step ↑</a></p></details>
+      <details class="reveal"><summary><h3>What does "Windows protected your PC" mean?</h3></summary><p>Solarum doesn't carry Microsoft's paid code signature yet, so Windows SmartScreen asks once. Click <i>More info</i>, then <i>Run anyway</i>. After that Solarum starts like any other app – no installer and no admin rights needed.</p></details>
+      <details class="reveal"><summary><h3>Are my projects safe when I update Solarum?</h3></summary><p>Yes. Your work is saved automatically, projects from older versions still load, and saving never leaves half a file, even if the computer crashes in the middle of it. Solarum tells you at launch when a new version is out; you can switch that check off in the settings.</p></details>
+      <details class="reveal"><summary><h3>How can I help?</h3></summary><p>Solarum is young and changes fast. <a href="https://github.com/tj537/solarum/issues/new?template=bug_report.yml">Report a bug</a>, <a href="https://github.com/tj537/solarum/issues/new?template=feature_request.yml">share an idea</a>, give it a star on GitHub, or support it on <a href="https://ko-fi.com/tj537">Ko-fi</a>. The code is open, so contributions are welcome too.</p></details>
     </div>
   </div>
 </section>
@@ -728,6 +904,18 @@ footer a.kofi:hover { background: var(--acid); color: var(--space); }
   }
   document.getElementById("tab-mac").onclick = () => selectTab("mac");
   document.getElementById("tab-win").onclick = () => selectTab("win");
+
+  // ---------- screenshot viewers: a tab per picture, the caption under it ----------
+  for (const list of document.querySelectorAll("[data-viewer]")) {
+    const id = list.dataset.viewer, tabs = [...list.querySelectorAll("[role=tab]")];
+    const imgs = [...document.getElementById(id).querySelectorAll("img")];
+    const cap = document.querySelector(`[data-cap-for="${id}"]`);
+    tabs.forEach((tab, i) => tab.addEventListener("click", () => {
+      tabs.forEach((t, k) => t.setAttribute("aria-selected", k === i));
+      imgs.forEach((img, k) => { img.classList.toggle("on", k === i); if (k === i) img.loading = "eager"; });
+      cap.textContent = imgs[i].dataset.cap;
+    }));
+  }
 
   // ---------- latest release ----------
   fetch("https://api.github.com/repos/tj537/solarum/releases/latest")

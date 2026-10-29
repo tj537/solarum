@@ -2,9 +2,27 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
   <url>
     <loc>https://tj537.github.io/solarum/</loc>
-    <lastmod>2026-10-29</lastmod>
+    <lastmod>2026-10-30</lastmod>
     <image:image>
       <image:loc>https://tj537.github.io/solarum/solarum.jpg</image:loc>
+    </image:image>
+    <image:image>
+      <image:loc>https://tj537.github.io/solarum/shot-sounds.jpg</image:loc>
+    </image:image>
+    <image:image>
+      <image:loc>https://tj537.github.io/solarum/shot-draw.jpg</image:loc>
+    </image:image>
+    <image:image>
+      <image:loc>https://tj537.github.io/solarum/shot-record.jpg</image:loc>
+    </image:image>
+    <image:image>
+      <image:loc>https://tj537.github.io/solarum/shot-pads.jpg</image:loc>
+    </image:image>
+    <image:image>
+      <image:loc>https://tj537.github.io/solarum/shot-home.jpg</image:loc>
+    </image:image>
+    <image:image>
+      <image:loc>https://tj537.github.io/solarum/shot-lights.jpg</image:loc>
     </image:image>
     <image:image>
       <image:loc>https://tj537.github.io/solarum/icon.png</image:loc>
