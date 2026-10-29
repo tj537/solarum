@@ -290,7 +290,7 @@ impl SolarumApp {
         }
         self.say(
             if on {
-                "Auto FX on – Solarum plays breaks and drops by itself"
+                "Auto FX on – Luna plays breaks and drops by itself"
             } else {
                 "Auto FX off – the energy bar is yours: low = break, 85 and up = everything, DROP drops"
             },
@@ -410,7 +410,7 @@ impl SolarumApp {
                 if fx {
                     "Auto FX off – the energy bar is yours: low = break, 85 and up = everything, DROP drops"
                 } else {
-                    "Auto FX on – Solarum plays breaks and drops by itself"
+                    "Auto FX on – Luna plays breaks and drops by itself"
                 },
                 now,
             );
@@ -525,13 +525,13 @@ impl SolarumApp {
                 p.text(
                     c + vec2(0.0, 55.0),
                     Align2::CENTER_CENTER,
-                    "Switch on and Solarum plays a set",
+                    "Switch on and Luna plays a set",
                     body(10.5),
                     FAINT,
                 );
             }
             switch |= resp
-                .on_hover_text("Switch on the auto mode: Solarum plays a whole set by itself")
+                .on_hover_text("Switch on the auto mode: Luna plays a whole set by itself")
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .clicked();
         }

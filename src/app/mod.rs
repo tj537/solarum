@@ -620,7 +620,7 @@ impl SolarumApp {
         self.say("Cleared – an empty sky, everything reset. Undo brings it back", now);
     }
 
-    /// Solarum steers the energy itself: the auto mode with AUTO FX on
+    /// The energy steers itself: AUTO SONG, or Luna in the auto mode with AUTO FX on
     fn energy_locked(&self) -> bool {
         self.song_form.is_some() || (self.song.auto && self.song.auto_fx)
     }
@@ -630,7 +630,7 @@ impl SolarumApp {
         if self.song_form.is_some() {
             "The song steers the energy – stop AUTO SONG to take it"
         } else {
-            "Solarum steers the energy – switch AUTO FX off to take it"
+            "Luna steers the energy – switch AUTO FX off to take it"
         }
     }
 
