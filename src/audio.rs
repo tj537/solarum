@@ -8,6 +8,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
 
+/// The most frames the engine renders at once
+const CHUNK: usize = 8192;
+
 pub struct Audio {
     _stream: Stream,
     pub sample_rate: u32,
@@ -35,8 +38,9 @@ pub fn start(song: Song, rx: Receiver<Cmd>, events: Sender<Event>, shared: Arc<S
     stream_config.buffer_size = cpal::BufferSize::Default;
 
     let mut engine = Engine::new(sr as f32, song, shared, Some(events), seed());
-    // Big enough for the usual buffer sizes, so the callback doesn't allocate
-    let mut scratch: Vec<f32> = Vec::with_capacity(8192 * 2);
+    // Allocated once here: the callback renders in pieces of at most `CHUNK` frames, so even a
+    // device asking for a huge buffer never makes it allocate
+    let mut scratch = vec![0.0f32; CHUNK * 2];
     let err = move |e| {
         eprintln!("audio error: {e}");
         failed.store(true, Ordering::Relaxed);
@@ -49,20 +53,21 @@ pub fn start(song: Song, rx: Receiver<Cmd>, events: Sender<Event>, shared: Arc<S
                 &stream_config,
                 move |data: &mut [$t], _| {
                     engine.drain(&rx);
-                    let frames = data.len() / channels;
-                    scratch.resize(frames * 2, 0.0);
-                    engine.render(&mut scratch);
-                    for (i, frame) in data.chunks_exact_mut(channels).enumerate() {
-                        for (c, s) in frame.iter_mut().enumerate() {
-                            let (l, r) = (scratch[i * 2], scratch[i * 2 + 1]);
-                            // A mono output gets both sides, extra channels stay silent
-                            let v = match (channels, c) {
-                                (1, _) => (l + r) * 0.5,
-                                (_, 0) => l,
-                                (_, 1) => r,
-                                _ => 0.0,
-                            };
-                            *s = $conv(v);
+                    for block in data.chunks_mut(CHUNK * channels) {
+                        let stereo = &mut scratch[..block.len() / channels * 2];
+                        engine.render(stereo);
+                        for (i, frame) in block.chunks_exact_mut(channels).enumerate() {
+                            for (c, s) in frame.iter_mut().enumerate() {
+                                let (l, r) = (stereo[i * 2], stereo[i * 2 + 1]);
+                                // A mono output gets both sides, extra channels stay silent
+                                let v = match (channels, c) {
+                                    (1, _) => (l + r) * 0.5,
+                                    (_, 0) => l,
+                                    (_, 1) => r,
+                                    _ => 0.0,
+                                };
+                                *s = $conv(v);
+                            }
                         }
                     }
                 },
