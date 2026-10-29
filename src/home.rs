@@ -1,5 +1,5 @@
 //! The start screen: what Solarum shows when it opens, and behind the logo – a new project,
-//! the last session, opening a file, letting Solari play, the recent projects as cards with
+//! the last session, opening a file, letting Luna play, the recent projects as cards with
 //! a little picture of each groove, settings and help
 
 use crate::file::SolarumFile;

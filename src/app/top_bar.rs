@@ -224,7 +224,7 @@ impl SolarumApp {
         let vibe = self.song.vibe;
         ui.set_min_width(340.0);
         ui.label(
-            egui::RichText::new("What should Solari play?")
+            egui::RichText::new("What should Luna play?")
                 .font(egui::FontId::monospace(12.0))
                 .color(ACID),
         );
@@ -250,11 +250,7 @@ impl SolarumApp {
         }
         let mut job = egui::text::LayoutJob::default();
         job.append("> Surprise me", 0.0, fmt(egui::FontId::monospace(13.0), ACID));
-        job.append(
-            "   Solari picks",
-            0.0,
-            fmt(egui::FontId::monospace(11.0), ACID.gamma_multiply(0.55)),
-        );
+        job.append("   Luna picks", 0.0, fmt(egui::FontId::monospace(11.0), ACID.gamma_multiply(0.55)));
         if ui.selectable_label(false, job).clicked() {
             let all: Vec<Vibe> = Vibe::ALL.into_iter().filter(|&v| v != Vibe::Custom && v != vibe).collect();
             picked = Some(*self.rng.pick(&all));

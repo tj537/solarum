@@ -260,7 +260,7 @@ pub struct SolarumApp {
     pub last_session: Option<Session>,
     /// The project as last saved or opened – the top bar shows a dot when it has changed
     saved: Option<Saved>,
-    /// Leaving a project with unsaved changes (New, Open, a recent one, Solari): what waits
+    /// Leaving a project with unsaved changes (New, Open, a recent one, Luna): what waits
     /// for the answer
     pending: Option<crate::home::Action>,
     /// The file the project was last saved to or opened from – Save writes there
@@ -269,11 +269,11 @@ pub struct SolarumApp {
     pub power_at: f64,
     pub on_start: OnStart,
     pub keep_tempo: bool,
-    /// What Solari learned you like (the thumbs in SOLAR OS) – saved with the settings
+    /// What Luna learned you like (the thumbs in SOLAR OS) – saved with the settings
     pub taste: crate::ear::Taste,
     /// The auto mode's last change, its track as it was before, and when it came – for the thumbs
     pub last_auto: Option<(gen::Change, crate::song::Track, f64)>,
-    /// Solari's manual (type help) is open next to SOLAR OS
+    /// Luna's manual (type help) is open next to SOLAR OS
     pub help_open: bool,
     /// chill (−1) … turnup (1), in thirds: how much pressure the auto mode puts on
     pub drive: f32,
@@ -293,8 +293,8 @@ pub struct SolarumApp {
     /// What the engine has in its slots, and buffers it may still hold (dropped once it let go)
     samples_sent: Slots,
     retired: Vec<Arc<SampleBuf>>,
-    /// When Solari drops its next line while it plays (0: not planned yet)
-    solari_drop_at: f64,
+    /// When Luna drops its next line while it plays (0: not planned yet)
+    luna_drop_at: f64,
 }
 
 impl SolarumApp {
@@ -502,7 +502,7 @@ impl SolarumApp {
             saved_samples: [0; SAMPLE_SLOTS],
             samples_sent: Default::default(),
             retired: Vec::new(),
-            solari_drop_at: 0.0,
+            luna_drop_at: 0.0,
         }
     }
 
@@ -696,17 +696,17 @@ impl SolarumApp {
         if !self.home && !self.lib_ui.open {
             self.keys(ctx, now);
         }
-        // While Solari plays, it drops a line now and then (every one to two and a half minutes)
+        // While Luna plays, it drops a line now and then (every one to two and a half minutes)
         if self.song.auto && self.playing() {
-            if self.solari_drop_at == 0.0 {
-                self.solari_drop_at = now + 45.0 + self.rng.f32() as f64 * 45.0;
-            } else if now >= self.solari_drop_at {
+            if self.luna_drop_at == 0.0 {
+                self.luna_drop_at = now + 45.0 + self.rng.f32() as f64 * 45.0;
+            } else if now >= self.luna_drop_at {
                 let line = *self.rng.pick(&crate::log::DROPS);
                 self.bunk(line, now);
-                self.solari_drop_at = now + 60.0 + self.rng.f32() as f64 * 90.0;
+                self.luna_drop_at = now + 60.0 + self.rng.f32() as f64 * 90.0;
             }
         } else {
-            self.solari_drop_at = 0.0;
+            self.luna_drop_at = 0.0;
         }
         let state = self.log_state();
         self.log.tick(state, now, &self.song);

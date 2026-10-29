@@ -1,4 +1,4 @@
-//! Solari's ear: how a groove sounds to someone who knows techno, and the director that
+//! Luna's ear: how a groove sounds to someone who knows techno, and the director that
 //! picks the auto mode's changes with it.
 //!
 //! The generator only knows how to make a change. The director makes a few of them on
@@ -143,7 +143,7 @@ impl Why {
     }
 }
 
-/// The kinds of change Solari learns your taste for (`Change::kind`)
+/// The kinds of change Luna learns your taste for (`Change::kind`)
 pub const KINDS: usize = 8;
 pub const KIND_NAMES: [&str; KINDS] = [
     "new patterns",
@@ -157,7 +157,7 @@ pub const KIND_NAMES: [&str; KINDS] = [
 ];
 
 /// What you kept (👍) and undid (👎) in SOLAR OS, per track and per kind of change.
-/// Saved with the settings, so Solari knows you in every project.
+/// Saved with the settings, so Luna knows you in every project.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Taste {
@@ -432,7 +432,7 @@ mod tests {
 
     #[test]
     fn taste_steers_the_choice() {
-        // Undo every sound swap and every bass change: Solari stops making them
+        // Undo every sound swap and every bass change: Luna stops making them
         let mut taste = Taste::default();
         for _ in 0..4 {
             taste.learn(Change::NewSound(Voice::Hat, 0), false);

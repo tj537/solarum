@@ -27,7 +27,7 @@ impl SolarumApp {
             Action::New => {
                 self.new_project();
                 self.home = false;
-                self.say("A new project: an empty sky, no favorites. Paint planets, or switch Solari on", now);
+                self.say("A new project: an empty sky, no favorites. Paint planets, or switch Luna on", now);
             }
             Action::Continue => {
                 if let Some(last) = self.last_session.take() {

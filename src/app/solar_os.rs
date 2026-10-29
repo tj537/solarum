@@ -1,14 +1,14 @@
-//! SOLAR OS: Solari's terminal (commands, verdicts, the ENERGY drive, auto effects, growing), the auto settings and the computer screen with its help.
+//! SOLAR OS: Luna's terminal (commands, verdicts, the ENERGY drive, auto effects, growing), the auto settings and the computer screen with its help.
 
 use super::*;
 
 impl SolarumApp {
-    /// Solari says something in the log
+    /// Luna says something in the log
     pub(super) fn bunk(&mut self, text: impl AsRef<str>, now: f64) {
         self.log.push(text.as_ref(), now);
     }
 
-    /// A command typed into the terminal – Solari runs the auto mode, so it answers
+    /// A command typed into the terminal – Luna runs the auto mode, so it answers
     pub(super) fn command(&mut self, line: &str, now: f64) {
         let line = line.trim().to_lowercase();
         if line.is_empty() {
@@ -45,7 +45,7 @@ impl SolarumApp {
                 self.bunk(QUIPS[pick(1, QUIPS.len())], now);
             }
             "seed" => {
-                // A word of your own, or one Solari picks so you can come back to it
+                // A word of your own, or one Luna picks so you can come back to it
                 let word = if arg.is_empty() {
                     const WORDS: [&str; 8] = ["nebula", "pulsar", "comet", "orbit", "quasar", "aurora", "meteor", "eclipse"];
                     format!("{}-{}", WORDS[pick(3, WORDS.len())], pick(4, 90) + 10)
@@ -157,8 +157,8 @@ impl SolarumApp {
                 ];
                 self.bunk(JOKES[pick(2, JOKES.len())], now);
             }
-            "hi" | "hello" | "hey" | "solari" | "bunk" | "who" => {
-                self.bunk("Yo bro! I'm Solari, I run the set down here. Type help if you're lost.", now)
+            "hi" | "hello" | "hey" | "luna" | "bunk" | "who" => {
+                self.bunk("Yo bro! I'm Luna, I run the set down here. Type help if you're lost.", now)
             }
             "off" | "exit" | "bye" | "quit" | "shutdown" => {
                 self.bunk("Peace out, brother. Lights out.", now);
@@ -175,9 +175,9 @@ impl SolarumApp {
         }
     }
 
-    /// A thumb for the auto mode's last move: up keeps it and Solari does more of that kind
+    /// A thumb for the auto mode's last move: up keeps it and Luna does more of that kind
     /// on that track; down puts the track back as it was (the engine then leaves it alone
-    /// for two phrases) and Solari does less of it
+    /// for two phrases) and Luna does less of it
     fn verdict(&mut self, liked: bool, now: f64) {
         let Some((c, before, _)) = self.last_auto.take() else {
             self.bunk("Nothing to rate yet, bro – wait for my next move.", now);
@@ -255,7 +255,7 @@ impl SolarumApp {
         self.glide_bpm = Some((goal, self.song.bpm));
     }
 
-    /// What Solari says to a new drive (`before`: where it came from)
+    /// What Luna says to a new drive (`before`: where it came from)
     fn say_drive(&mut self, before: f32, now: f64) {
         let d = self.drive;
         if (d - before).abs() < 0.02 {
@@ -311,7 +311,7 @@ impl SolarumApp {
                 let hello = crate::log::HELLOS[(now as usize) % crate::log::HELLOS.len()];
                 self.bunk(hello, now);
                 self.start_growing(now);
-                // Solari takes over: the music starts right away
+                // Luna takes over: the music starts right away
                 if !self.playing() {
                     self.toggle_play();
                 }
@@ -319,7 +319,7 @@ impl SolarumApp {
         }
     }
 
-    /// The auto mode comes on: Solari keeps what's there and grows the rest – every empty track
+    /// The auto mode comes on: Luna keeps what's there and grows the rest – every empty track
     /// comes in on its own bar (an empty sky builds up from the kick)
     fn start_growing(&mut self, now: f64) {
         let empty = self.song.tracks.iter().all(|t| t.hits() == 0);
@@ -418,9 +418,9 @@ impl SolarumApp {
     }
 
     /// The auto mode is the computer: SOLAR OS, the terminal under the mood. Off, its screen
-    /// is dark with a power button; switched on it boots, Solari says hello, and it's a little
+    /// is dark with a power button; switched on it boots, Luna says hello, and it's a little
     /// operating system: a title bar (SET for the settings, OFF), a menu (the vibe, SHUFFLE),
-    /// the log, and a prompt Solari answers.
+    /// the log, and a prompt Luna answers.
     pub(super) fn computer(&mut self, ui: &mut Ui, energy: Option<f32>, now: f64) {
         let on = self.song.auto || self.song_form.is_some();
         let w = ui.available_width();
@@ -447,7 +447,7 @@ impl SolarumApp {
                 self.os_card(ui, rect, now);
             }
             self.os_prompt(ui, rect, now);
-            // Logged in: Solari, the mascot, waves and says hello, then the log takes over
+            // Logged in: Luna, the mascot, waves and says hello, then the log takes over
             let since = (now - self.power_at) as f32;
             if (0.0..2.0).contains(&since) {
                 let p = ui.painter_at(rect);
@@ -584,7 +584,7 @@ impl SolarumApp {
         );
         let set_r = Rect::from_min_max(pos2(off_r.left() - 36.0, off_r.top()), pos2(off_r.left() - 4.0, off_r.bottom()));
         let off = key(ui, off_r, "os_off", "OFF", false).on_hover_text("Switch the auto mode off (or type off)");
-        let set = key(ui, set_r, "os_set", "SET", false).on_hover_text("Settings: how often Solari changes something, AUTO FX");
+        let set = key(ui, set_r, "os_set", "SET", false).on_hover_text("Settings: how often Luna changes something, AUTO FX");
         let popup = ui.make_persistent_id("auto_bars");
         if set.clicked() {
             ui.memory_mut(|m| m.toggle_popup(popup));
@@ -600,7 +600,7 @@ impl SolarumApp {
         let vibe_r = Rect::from_min_size(row.min, vec2(row.width() * 0.62 - 3.0, row.height()));
         let shuf_r = Rect::from_min_max(pos2(vibe_r.right() + 6.0, row.top()), row.max);
         let vibe = key(ui, vibe_r, "os_vibe", "PICK A GENRE", true)
-            .on_hover_text(format!("Now: {} – pick one and Solari rolls a groove in it", self.song.vibe.name()));
+            .on_hover_text(format!("Now: {} – pick one and Luna rolls a groove in it", self.song.vibe.name()));
         // A little arrow: it opens a list
         let c = pos2(vibe_r.right() - 10.0, vibe_r.center().y);
         p.add(egui::Shape::convex_polygon(
@@ -630,7 +630,7 @@ impl SolarumApp {
     }
 
     /// The auto mode's last move, above the prompt: what it changed, and a thumb up (keep it,
-    /// more of that) or down (undo it, less of that) – Solari learns your taste from them
+    /// more of that) or down (undo it, less of that) – Luna learns your taste from them
     fn os_card(&mut self, ui: &mut Ui, rect: Rect, now: f64) {
         let Some((c, _, at)) = self.last_auto else { return };
         let row = Rect::from_min_max(
@@ -662,12 +662,12 @@ impl SolarumApp {
             p.text(r.center(), Align2::CENTER_CENTER, icon, body(13.0), if hot { TEXT } else { ACID });
             resp.on_hover_text(tip).on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
         };
-        let up = thumb(up_r, "os_like", ph::THUMBS_UP, "Keep it – Solari does more of that (or type like)");
+        let up = thumb(up_r, "os_like", ph::THUMBS_UP, "Keep it – Luna does more of that (or type like)");
         let down = thumb(
             down_r,
             "os_nope",
             ph::THUMBS_DOWN,
-            "Undo it – the track goes back and Solari does less of that (or type nope)",
+            "Undo it – the track goes back and Luna does less of that (or type nope)",
         );
         if up {
             self.verdict(true, now);
@@ -678,7 +678,7 @@ impl SolarumApp {
 
     /// The energy slider under the menu – the one lever for how much pressure there is. The
     /// lit cells are the energy playing now. By hand (AUTO FX off) it sets the energy. With
-    /// AUTO FX Solari steers the energy through the cycle, and the slider lifts or lowers all
+    /// AUTO FX Luna steers the energy through the cycle, and the slider lifts or lowers all
     /// of it (`set_drive`): drag right and the set runs hotter, busier and a touch faster,
     /// left calmer, airier and a touch slower. The notch under it shows the lift.
     fn os_energy(&mut self, ui: &mut Ui, row: Rect, energy: f32, now: f64) {
@@ -759,7 +759,7 @@ impl SolarumApp {
         let tip = if song {
             "The song steers the energy"
         } else if steer {
-            "Energy: Solari steers it through the cycle. The notch lifts or lowers the whole set – drag it \
+            "Energy: Luna steers it through the cycle. The notch lifts or lowers the whole set – drag it \
              right for hotter, busier and a touch faster, left for calmer, airier and a touch slower, the \
              middle for neither (or type turnup / chill)."
         } else {
@@ -768,7 +768,7 @@ impl SolarumApp {
         resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(tip);
     }
 
-    /// Solari's manual (type help): every command by topic with what it does, in a window
+    /// Luna's manual (type help): every command by topic with what it does, in a window
     /// next to SOLAR OS. A click runs a command – or, when it takes a word (vibe acid,
     /// bpm 135 …), puts it into the prompt to finish. Esc, ✕ or a click outside close it.
     fn os_help(&mut self, ctx: &egui::Context, os: Rect, now: f64) {
@@ -826,7 +826,7 @@ impl SolarumApp {
         let mono = egui::FontId::monospace;
         let mut act: Option<&Do> = None;
         let mut close = ctx.input(|i| i.key_pressed(Key::Escape));
-        let area = egui::Area::new(egui::Id::new("solari_help"))
+        let area = egui::Area::new(egui::Id::new("luna_help"))
             .order(egui::Order::Foreground)
             .fade_in(false)
             .pivot(Align2::LEFT_BOTTOM)
@@ -842,7 +842,7 @@ impl SolarumApp {
                         ui.set_width(360.0);
                         ui.spacing_mut().item_spacing.y = 0.0;
                         ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("SOLARI · MANUAL").font(mono(12.0)).color(ACID));
+                            ui.label(egui::RichText::new("LUNA · MANUAL").font(mono(12.0)).color(ACID));
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 let x =
                                     ui.add(egui::Label::new(egui::RichText::new(ph::X).font(body(13.0)).color(DIM)).sense(Sense::click()));
@@ -890,7 +890,7 @@ impl SolarumApp {
             Some(Do::Type(c)) => {
                 self.cmd = c.to_string();
                 // Into the prompt, the cursor at the end, ready for the word
-                ctx.memory_mut(|m| m.request_focus(egui::Id::new("solari_prompt")));
+                ctx.memory_mut(|m| m.request_focus(egui::Id::new("luna_prompt")));
                 close = true;
             }
             None => {}
@@ -900,7 +900,7 @@ impl SolarumApp {
         }
     }
 
-    /// SOLAR OS's prompt, at the bottom of the screen: type to Solari
+    /// SOLAR OS's prompt, at the bottom of the screen: type to Luna
     fn os_prompt(&mut self, ui: &mut Ui, rect: Rect, now: f64) {
         let mono = egui::FontId::monospace(11.0);
         let line = Rect::from_min_max(
@@ -922,7 +922,7 @@ impl SolarumApp {
             cursor.off_duration = 0.7;
             let resp = ui.add(
                 egui::TextEdit::singleline(&mut self.cmd)
-                    .id(egui::Id::new("solari_prompt"))
+                    .id(egui::Id::new("luna_prompt"))
                     .frame(false)
                     .font(mono)
                     .text_color(ACID)

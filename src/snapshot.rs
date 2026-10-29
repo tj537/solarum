@@ -183,7 +183,7 @@ mod tests {
             app.shared.drive.store(0.4f32.to_bits(), Relaxed);
             app.song.macros.energy = 0.82;
         });
-        render("solari_manual", 1360.0, 860.0, |app| {
+        render("luna_manual", 1360.0, 860.0, |app| {
             app.song.auto = true;
             app.help_open = true;
             app.fake_live = Some(playing(36.3, &[0, 3, 6]));
@@ -308,7 +308,7 @@ mod tests {
             app.lib_ui.show_for(None);
             app.lib_ui.finish_with(id, crate::library_ui::Step::Record);
         });
-        // Solari says hello as the computer comes on (render time is ~10 s)
+        // Luna says hello as the computer comes on (render time is ~10 s)
         render("home", 1360.0, 860.0, |app| {
             app.home = true;
             app.last_session = Some(crate::app::Session {

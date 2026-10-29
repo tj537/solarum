@@ -174,7 +174,7 @@ impl SolarumApp {
     }
 
     pub(super) fn keys(&mut self, ctx: &egui::Context, now: f64) {
-        // Naming a favorite or typing to Solari: the keys belong to the text field
+        // Naming a favorite or typing to Luna: the keys belong to the text field
         if self.renaming.is_some() || self.typing {
             return;
         }

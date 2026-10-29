@@ -683,7 +683,7 @@ impl Change {
         }
     }
 
-    /// What kind of change it was (`crate::ear::KINDS`), for the taste Solari learns
+    /// What kind of change it was (`crate::ear::KINDS`), for the taste Luna learns
     pub fn kind(self) -> Option<usize> {
         Some(match self {
             Change::NewPattern(_) => 0,

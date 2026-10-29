@@ -506,15 +506,15 @@ fn set_map(p: &egui::Painter, r: Rect, w: Where, energy: f32, now: f64) {
     }
 }
 
-/// The greetings Solari, the computer's mascot, types when it boots
+/// The greetings Luna, the computer's mascot, types when it boots
 pub const HELLOS: [&str; 4] = [
-    "Yo bro, Solari here. I got this.",
+    "Yo bro, Luna here. I got this.",
     "What's good, brother? Let me cook.",
-    "Ayo, Solari online. We outside tonight.",
+    "Ayo, Luna online. We outside tonight.",
     "Sit back, fam. I'm driving.",
 ];
 
-/// What Solari drops into the log now and then while it plays
+/// What Luna drops into the log now and then while it plays
 pub const DROPS: [&str; 16] = [
     "This groove is bussin, no cap.",
     "Lowkey this bass hits different, bro.",
@@ -534,13 +534,13 @@ pub const DROPS: [&str; 16] = [
     "Main character energy on this one, fr.",
 ];
 
-/// Solari, the little robot on the computer's screen: a head with an antenna that blinks,
+/// Luna, the little robot on the computer's screen: a head with an antenna that blinks,
 /// eyes that blink, a smile, and an arm that waves. `t` is seconds since it appeared.
 pub fn robot(p: &egui::Painter, c: Pos2, s: f32, t: f32, ink: Color32) {
     robot_waving(p, c, s, t, ink, 1.0);
 }
 
-/// Solari with the right arm waving by `wave` (0: it hangs like the left one, 1: a full wave)
+/// Luna with the right arm waving by `wave` (0: it hangs like the left one, 1: a full wave)
 pub fn robot_waving(p: &egui::Painter, c: Pos2, s: f32, t: f32, ink: Color32, wave: f32) {
     let line = stroke(2.0, ink);
     // Body and head
