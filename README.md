@@ -125,11 +125,11 @@ It's a little operating system, **SOLAR OS**. The title bar has **SET** (how oft
 
 - **The sound section** sits at the top right (click SOUND to show or fold it):
   - a **character pad** – drag up for DARK, right for ACID;
-  - **SPACE, PUMP, KEY and DRIVE** as little pictures of what they do – echoes rippling out, the mix ducking under the kick, the key of the whole song (planets are steps of the scale, so the melody stays), a wave pushed into saturation – each dragged up or down;
-  - the **master EQ** as a curve with three points to drag.
+  - **SPACE, PUMP, KEY and DRIVE** as little pictures of what they do – echoes rippling out, the mix ducking under the kick, the key of the whole song (planets are steps of the scale, so the melody stays), a wave pushed into saturation – each dragged up or down (or scrolled). They say what they do in a word – SPACE *dry · room · hall · cave*, PUMP *off · soft · breathing · pumping*, DRIVE *clean · warm · hot · fuzz* – and show the number while you drag;
+  - the **master EQ** as a curve with three points to drag; a band shows its dB once it's moved.
 
   Double-click resets. When the auto mode sweeps the acid or a breakdown sweeps the filter, the pucks move with it.
-- **Live effects (hold to use):** stutter, echo, wash, crush, gate and tape stop. Each button shows what it does in a little picture that moves when the mouse is over it, runs faster while the effect is on and bursts out of the button when you press it. Next to them is a **filter pad**: drag left for low-pass, right for high-pass, up for resonance; it springs back when you let go. When Solarum uses an effect by itself – like the gate in every build-up – its button lights up and flickers with the chop.
+- **Live effects:** hold one to play it, or **tap it to lock it on** (a pin shows) until the next tap – so you can lock an echo and still play the filter with the mouse. <kbd>Esc</kbd> lets go of everything locked. The effects: stutter, echo, wash, crush, gate and tape stop. Each button shows what it does in a little picture that moves when the mouse is over it, runs faster while the effect is on and bursts out of the button when you press it. Next to them is a **filter pad**: drag left for low-pass, right for high-pass, up for resonance; it springs back when you let go – **double-click it to hold it** where it is (it shows HELD), double-click again to let it spring back. When Solarum uses an effect by itself – like the gate in every build-up – its button lights up and flickers with the chop.
 
 ### Visualizers
 
@@ -157,7 +157,7 @@ All keys keep working, so <kbd>←</kbd> <kbd>→</kbd> take the set from break 
 | <kbd>←</kbd> <kbd>→</kbd> | energy down / up |
 | <kbd>↑</kbd> <kbd>↓</kbd> | tempo |
 | <kbd>B</kbd> | build-up and drop |
-| <kbd>Q</kbd> <kbd>W</kbd> <kbd>E</kbd> <kbd>X</kbd> <kbd>C</kbd> <kbd>V</kbd> (hold) | stutter, echo, wash, crush, gate, tape stop |
+| <kbd>Q</kbd> <kbd>W</kbd> <kbd>E</kbd> <kbd>X</kbd> <kbd>C</kbd> <kbd>V</kbd> | stutter, echo, wash, crush, gate, tape stop – hold to play, tap to lock on |
 | <kbd>R</kbd> | record your set on / off |
 | <kbd>Tab</kbd> | planets → classic (→ radar, when it's on) |
 | <kbd>P</kbd> | LIGHTS visualizer |

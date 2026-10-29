@@ -95,7 +95,8 @@ pub fn character(ui: &mut Ui, dark: &mut f32, acid: &mut f32, def: [f32; 2], sho
 /// double-click a point to flatten it
 pub fn eq_curve(ui: &mut Ui, bands: &mut [f32; 3], colors: [Color32; 3], width: f32, height: f32) -> Response {
     let (all, mut resp) = ui.allocate_exact_size(vec2(width, height + 18.0), Sense::click_and_drag());
-    let rect = Rect::from_min_size(all.min, vec2(width, height));
+    // One card like the others: the points above, their names along the bottom
+    let rect = Rect::from_min_max(all.min + vec2(0.0, 2.0), pos2(all.right(), all.bottom() - 18.0));
     let xs = [1.0 / 6.0, 0.5, 5.0 / 6.0].map(|f| rect.left() + f * rect.width());
     let span = rect.height() / 2.0 - 8.0;
     let y_of = |v: f32| rect.center().y - (v - 0.5) * 2.0 * span;
@@ -123,8 +124,8 @@ pub fn eq_curve(ui: &mut Ui, bands: &mut [f32; 3], colors: [Color32; 3], width: 
     }
 
     let p = ui.painter_at(all.expand(2.0));
-    p.rect_filled(rect, 12.0, Color32::from_black_alpha(80));
-    p.rect_stroke(rect, 12.0, stroke(1.0, LINE), egui::StrokeKind::Inside);
+    p.rect_filled(all, 10.0, Color32::from_black_alpha(80));
+    p.rect_stroke(all, 10.0, stroke(1.0, LINE), egui::StrokeKind::Inside);
     dashed(
         &p,
         pos2(rect.left() + 8.0, rect.center().y),
@@ -151,30 +152,47 @@ pub fn eq_curve(ui: &mut Ui, bands: &mut [f32; 3], colors: [Color32; 3], width: 
             glow(&p, at, 7.0, colors[k], 0.5);
         }
         p.circle_filled(at, 7.0, colors[k]);
-        let db = (bands[k] - 0.5) * 2.0 * crate::song::EQ_DB;
+        // The name alone while flat, with its dB once it's moved
+        let db = ((bands[k] - 0.5) * 2.0 * crate::song::EQ_DB).round();
+        let name = if db == 0.0 {
+            names[k].to_string()
+        } else {
+            format!("{} {db:+.0}", names[k])
+        };
         p.text(
-            pos2(xs[k], all.bottom()),
-            Align2::CENTER_BOTTOM,
-            format!("{} {:+.0}", names[k], db).replace("+0", "0").replace("-0", "0"),
-            bold(10.5),
-            if hot { TEXT } else { DIM },
+            pos2(xs[k], all.bottom() - 11.0),
+            Align2::CENTER_CENTER,
+            name,
+            bold(10.0),
+            if db != 0.0 {
+                colors[k]
+            } else if hot {
+                TEXT
+            } else {
+                DIM
+            },
         );
     }
     resp.on_hover_cursor(egui::CursorIcon::ResizeVertical)
 }
 
 /// The filter as a pad: left low-pass, right high-pass, the middle off; up adds resonance.
-/// Let go and it springs back to off.
+/// Let go and it springs back to off – unless it's held (`lock`, a double-click toggles it).
 /// `engine_pos` is where the engine's filter is (smoothed, or swept by a breakdown) – the
 /// puck shows it while no hand is on the pad.
-pub fn filter_pad(ui: &mut Ui, pos: &mut f32, res: &mut f32, engine_pos: f32, width: f32, height: f32) -> Response {
+pub fn filter_pad(ui: &mut Ui, pos: &mut f32, res: &mut f32, lock: &mut bool, engine_pos: f32, width: f32, height: f32) -> Response {
     let (rect, mut resp) = ui.allocate_exact_size(vec2(width, height), Sense::click_and_drag());
     let held = resp.is_pointer_button_down_on() || resp.dragged();
     let rest_y = rect.center().y + rect.height() * 0.15;
+    if resp.double_clicked() {
+        *lock = !*lock;
+    }
     if let Some(at) = resp.interact_pointer_pos().filter(|_| held) {
         *pos = ((at.x - rect.center().x) / (rect.width() / 2.0 - 12.0)).clamp(-1.0, 1.0);
         *res = ((rest_y - at.y) / (rest_y - rect.top() - 12.0)).clamp(0.0, 1.0);
         resp.mark_changed();
+    } else if *lock {
+        // Held: it stays where the hand left it
     } else if pos.abs() > 0.0 || *res > 0.0 {
         // Spring back
         *pos *= 0.75;
@@ -203,7 +221,17 @@ pub fn filter_pad(ui: &mut Ui, pos: &mut f32, res: &mut f32, engine_pos: f32, wi
         HIGH_PASS
     };
     let pad = vec2(10.0, 8.0);
-    p.text(rect.center_top() + vec2(0.0, pad.y), Align2::CENTER_TOP, "OFF", bold(10.0), FAINT);
+    if *lock {
+        p.text(
+            rect.center_top() + vec2(0.0, pad.y),
+            Align2::CENTER_TOP,
+            format!("{} HELD", ph::LOCK_SIMPLE),
+            bold(10.0),
+            TEXT,
+        );
+    } else {
+        p.text(rect.center_top() + vec2(0.0, pad.y), Align2::CENTER_TOP, "OFF", bold(10.0), FAINT);
+    }
     p.text(
         rect.left_top() + pad,
         Align2::LEFT_TOP,
@@ -237,6 +265,10 @@ pub fn filter_pad(ui: &mut Ui, pos: &mut f32, res: &mut f32, engine_pos: f32, wi
     glow(&p, at, 11.0, color, amount);
     p.circle_filled(at, 11.0, mix(PANEL, BG, 0.5));
     p.circle_stroke(at, 11.0, stroke(2.0, if amount > 0.01 { color } else { TEXT }));
+    if *lock {
+        // A filled heart: it doesn't spring back
+        p.circle_filled(at, 4.0, if amount > 0.01 { color } else { TEXT });
+    }
     resp.on_hover_cursor(egui::CursorIcon::Grab)
 }
 
@@ -259,6 +291,19 @@ pub fn card(p: &egui::Painter, rect: Rect, label: &str, value: &str, color: Colo
     );
     p.text(pos2(rect.right() - 8.0, row), Align2::RIGHT_CENTER, value, bold(11.0), color);
     Rect::from_min_max(rect.min + vec2(8.0, 8.0), pos2(rect.right() - 8.0, rect.bottom() - 22.0))
+}
+
+/// What a 0…1 value sounds like, in a word: the first for 0, the others share the rest.
+/// While it's dragged the number shows instead, for the fine-tuning
+fn in_words(resp: &Response, value: f32, words: &[&str]) -> String {
+    if resp.dragged() {
+        format!("{:.0}", value * 100.0)
+    } else if value < 0.005 {
+        words[0].to_string()
+    } else {
+        let n = words.len() - 1;
+        words[1 + ((value * n as f32) as usize).min(n - 1)].to_string()
+    }
 }
 
 /// Drag up or down (or scroll) to change a 0…1 value, double-click resets
@@ -287,7 +332,14 @@ pub fn space_card(ui: &mut Ui, value: &mut f32, default: f32, color: Color32, wi
     drag_value(ui, &mut resp, value, default);
     let p = ui.painter_at(rect);
     let hot = resp.hovered() || resp.dragged();
-    let area = card(&p, rect, "SPACE", &format!("{:.0}", *value * 100.0), color, hot);
+    let area = card(
+        &p,
+        rect,
+        "SPACE",
+        &in_words(&resp, *value, &["dry", "room", "hall", "cave"]),
+        color,
+        hot,
+    );
     let pic = area;
     let c = pos2(pic.left() + 6.0, pic.center().y);
     p.circle_filled(c, 3.5, color);
@@ -319,7 +371,14 @@ pub fn pump_card(ui: &mut Ui, value: &mut f32, default: f32, color: Color32, wid
     drag_value(ui, &mut resp, value, default);
     let p = ui.painter_at(rect);
     let hot = resp.hovered() || resp.dragged();
-    let area = card(&p, rect, "PUMP", &format!("{:.0}", *value * 100.0), color, hot);
+    let area = card(
+        &p,
+        rect,
+        "PUMP",
+        &in_words(&resp, *value, &["off", "soft", "breathing", "pumping"]),
+        color,
+        hot,
+    );
     let depth = *value * 0.9;
     let pts: Vec<Pos2> = (0..=80)
         .map(|i| {
@@ -329,11 +388,13 @@ pub fn pump_card(ui: &mut Ui, value: &mut f32, default: f32, color: Color32, wid
             pos2(area.left() + f * area.width(), area.top() + (1.0 - env) * area.height())
         })
         .collect();
-    // A soft fill under the curve, column by column (premultiplied: `alpha` would glare)
+    // A soft fill where the mix dips, column by column (premultiplied: `alpha` would glare) –
+    // with no pump nothing dips and the card lies still
     for pt in pts.iter().step_by(2) {
-        p.line_segment([*pt, pos2(pt.x, area.bottom())], stroke(1.5, color.gamma_multiply(0.14)));
+        p.line_segment([pos2(pt.x, area.top()), *pt], stroke(1.5, color.gamma_multiply(0.22)));
     }
-    p.add(egui::Shape::line(pts, stroke(2.0, color)));
+    let ink = if *value < 0.005 { alpha(color, 0.35) } else { color };
+    p.add(egui::Shape::line(pts, stroke(2.0, ink)));
     for k in 0..4 {
         let x = area.left() + k as f32 / 4.0 * area.width();
         p.circle_filled(pos2(x, area.bottom()), 2.0, alpha(TEXT, 0.5));
@@ -347,7 +408,14 @@ pub fn drive_card(ui: &mut Ui, value: &mut f32, default: f32, color: Color32, wi
     drag_value(ui, &mut resp, value, default);
     let p = ui.painter_at(rect);
     let hot = resp.hovered() || resp.dragged();
-    let area = card(&p, rect, "DRIVE", &format!("{:.0}", *value * 100.0), color, hot);
+    let area = card(
+        &p,
+        rect,
+        "DRIVE",
+        &in_words(&resp, *value, &["clean", "warm", "hot", "fuzz"]),
+        color,
+        hot,
+    );
     let k = 1.0 + *value * 9.0;
     let wave = |shape: &dyn Fn(f32) -> f32| -> Vec<Pos2> {
         (0..=80)

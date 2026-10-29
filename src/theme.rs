@@ -12,7 +12,7 @@ pub const PANEL_HI: Color32 = Color32::from_rgb(70, 70, 74);
 pub const LINE: Color32 = Color32::from_rgb(84, 84, 90);
 pub const TEXT: Color32 = Color32::from_rgb(240, 240, 243);
 pub const DIM: Color32 = Color32::from_rgb(180, 180, 187);
-pub const FAINT: Color32 = Color32::from_rgb(130, 130, 138);
+pub const FAINT: Color32 = Color32::from_rgb(150, 150, 158);
 /// The dark inside of a pad, card or button (what black at 80/255 makes of the concrete)
 pub const PAD: Color32 = Color32::from_rgb(39, 39, 41);
 /// Deep space: the window in the middle and the visualizer

@@ -326,7 +326,7 @@ pub fn fx_button(
         Align2::RIGHT_TOP,
         key,
         bold(9.5),
-        if active { alpha(BG, 0.6) } else { alpha(TEXT, 0.35) },
+        if active { alpha(BG, 0.6) } else { alpha(TEXT, 0.55) },
     );
 }
 
