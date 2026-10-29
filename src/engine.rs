@@ -196,6 +196,8 @@ pub struct Shared {
     pub cycle_depth: AtomicU32,
     /// Auto mode: the bar the next change lands on (`u64::MAX`: none planned)
     pub next_change: AtomicU64,
+    /// The drive the energy slider set (f32 bits, −1…1), for the map's curve
+    pub drive: AtomicU32,
     /// Set by the UI: while SOLAR OS plays, the energy may add ghost hats and thin out the
     /// percussion. By hand (auto off, no song) the pattern always plays exactly as written.
     pub touches: AtomicBool,
@@ -227,6 +229,7 @@ impl Shared {
             heat: AtomicU32::new(500),
             cycle_depth: AtomicU32::new(200),
             next_change: AtomicU64::new(u64::MAX),
+            drive: AtomicU32::new(0),
             audition: AtomicU64::new(u64::MAX),
         })
     }
@@ -816,6 +819,11 @@ impl Engine {
             Cmd::Taste(t) => self.taste = t,
             Cmd::Drive(d) => {
                 self.drive = d.clamp(-1.0, 1.0);
+                self.shared.drive.store(self.drive.to_bits(), Ordering::Relaxed);
+                // The energy heads for the lifted curve right away, not on the next bar
+                if self.song.auto && self.song.auto_fx && self.arrangement.is_none() && self.playing {
+                    self.energy_goal = self.curve_target(self.bar_now.saturating_sub(self.cycle_start));
+                }
                 // The curve and the map follow at once; the energy glides there
                 self.publish_cycle();
             }
@@ -1392,7 +1400,7 @@ impl Engine {
     /// towards the breakdown, falls to the plan's depth and creeps up through it, then
     /// climbs through the build-up. The heat of the cycle sets how high it all goes.
     fn curve_target(&self, b: u64) -> f32 {
-        curve(b, self.cycle_len, self.breakdown_at(), self.plan.depth, self.heat_now())
+        curve(b, self.cycle_len, self.breakdown_at(), self.plan.depth, self.heat_now(), self.drive)
     }
 
     /// The set's heat with your drive on top (chill cools it, turnup heats it)
@@ -2210,8 +2218,13 @@ impl Engine {
 
 /// The auto mode's energy curve over a cycle of `len` bars with its breakdown at bar `at`
 /// (`len - 2` or later: a roller without one) going down to `depth`, at the set's `heat` –
-/// the engine steers by it, SOLAR OS draws it
-pub fn curve(b: u64, len: u64, at: u64, depth: f32, h: f32) -> f32 {
+/// the engine steers by it, SOLAR OS draws it. `drive` (−1…1, the energy slider) lifts or
+/// lowers all of it.
+pub fn curve(b: u64, len: u64, at: u64, depth: f32, h: f32, drive: f32) -> f32 {
+    (plan_curve(b, len, at, depth, h) + 0.25 * drive).clamp(0.05, 1.0)
+}
+
+fn plan_curve(b: u64, len: u64, at: u64, depth: f32, h: f32) -> f32 {
     let build = len.saturating_sub(2);
     let has_breakdown = at < build;
     let drop = 0.9 + 0.08 * h;

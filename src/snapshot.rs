@@ -179,7 +179,9 @@ mod tests {
             let v = crate::song::Voice::Bass;
             app.last_auto = Some((crate::gen::Change::NewNotes(v), *app.song.track(v), -10.0));
             app.log.push("New bass notes – room for the kick", -10.0);
-            app.drive = 1.0 / 3.0;
+            app.drive = 0.4;
+            app.shared.drive.store(0.4f32.to_bits(), Relaxed);
+            app.song.macros.energy = 0.82;
         });
         render("solari_manual", 1360.0, 860.0, |app| {
             app.song.auto = true;

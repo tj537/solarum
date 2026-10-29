@@ -2115,70 +2115,77 @@ impl SolarumApp {
         self.bunk(format!("Undone: {what}. Less of that – got it."), now);
     }
 
-    /// chill (−1) or turnup (1): a third more or less pressure. Not just the tempo – it glides
-    /// 3 BPM, the set runs hotter or cooler (the energy curve, shorter or longer cycles), the
-    /// director aims at a busier or airier groove, and when the energy bar is yours it glides too
+    /// chill (−1) or turnup (1): the energy slider a step down or up – with AUTO FX the
+    /// whole set lifts or sinks (and the tempo follows a little), by hand the energy glides
     fn push_drive(&mut self, dir: f32, now: f64) {
-        let level = ((self.drive * 3.0).round() + dir).clamp(-3.0, 3.0);
-        if level == (self.drive * 3.0).round() {
-            self.bunk(
-                if dir > 0.0 {
-                    "That's as hard as I go, fam. Any more and the speakers file a complaint."
-                } else {
-                    "Any chiller and we're asleep, bro."
-                },
-                now,
-            );
+        if self.song_form.is_some() {
+            self.bunk("The song steers the energy right now, bro.", now);
             return;
         }
-        let before = self.drive;
-        self.set_drive(level as i32);
-        self.say_drive(before, now);
+        if self.energy_locked() {
+            let before = self.drive;
+            self.set_drive(self.drive + dir / 3.0);
+            if self.drive == before {
+                self.bunk(
+                    if dir > 0.0 {
+                        "That's as hard as I go, fam. Any more and the speakers file a complaint."
+                    } else {
+                        "Any chiller and we're asleep, bro."
+                    },
+                    now,
+                );
+            } else {
+                self.say_drive(before, now);
+            }
+            return;
+        }
+        let e = self.glide_energy.map_or(self.song.macros.energy, |g| g.0);
+        // Chill never sinks into the break zone – that's what the energy bar is for
+        let to = (e + 0.12 * dir).clamp(0.35, 1.0);
+        self.glide_energy = Some((to, self.song.macros.energy));
+        self.bunk(
+            if dir > 0.0 {
+                format!("More energy, bro – up to {:.0}.", to * 100.0)
+            } else {
+                format!("Easing off, bro – down to {:.0}.", to * 100.0)
+            },
+            now,
+        );
     }
 
-    /// The drive to `level` (−3 chill … 3 turned up): the engine hears it, the tempo glides
-    /// 3 BPM per level, and the energy when it's yours
-    fn set_drive(&mut self, level: i32) {
-        let from = (self.drive * 3.0).round() as i32;
-        let level = level.clamp(-3, 3);
-        if level == from {
+    /// With AUTO FX: how far the energy slider lifts (or lowers) the whole set, −1…1. The
+    /// engine heats the set and aims at a busier groove; the tempo glides 3 BPM across the range.
+    fn set_drive(&mut self, d: f32) {
+        let d = d.clamp(-1.0, 1.0);
+        if (d - self.drive).abs() < 1e-4 {
             return;
         }
-        let dir = (level - from) as f32;
-        self.drive = level as f32 / 3.0;
-        self.send(Cmd::Drive(self.drive));
         let bpm = self.glide_bpm.map_or(self.song.bpm, |g| g.0);
-        let goal = (bpm + 3.0 * dir).round().clamp(90.0, 180.0);
+        let goal = (bpm + 3.0 * (d - self.drive)).clamp(90.0, 180.0);
+        self.drive = d;
+        self.send(Cmd::Drive(d));
         self.glide_bpm = Some((goal, self.song.bpm));
-        if !self.energy_locked() {
-            let e = self.glide_energy.map_or(self.song.macros.energy, |g| g.0);
-            // Chill never sinks into the break zone – that's what the energy bar is for
-            let to = (e + 0.12 * dir).clamp(0.35, 1.0);
-            self.glide_energy = Some((to, self.song.macros.energy));
-        }
     }
 
     /// What Solari says to a new drive (`before`: where it came from)
     fn say_drive(&mut self, before: f32, now: f64) {
-        let level = (self.drive * 3.0).round() as i32;
-        let dir = self.drive - before;
-        if dir == 0.0 {
+        let d = self.drive;
+        if (d - before).abs() < 0.02 {
             return;
         }
-        let goal = self.glide_bpm.map_or(self.song.bpm, |g| g.0);
-        let words = match level {
-            3 => "Full send, fam. Maximum pressure.",
-            2 => "Turning it up – more drive, more hits. Feel that?",
-            1 if before < 0.0 => "Back to normal, bro. Middle of the road.",
-            1 => "A bit more push, bro.",
-            0 if dir > 0.0 => "Waking it back up, bro. Middle of the road.",
-            0 => "Taking the edge off, bro. Middle of the road.",
-            -1 if before > 0.0 => "Back to normal, bro. Middle of the road.",
-            -1 => "Easing off a little, bro.",
-            -2 => "Chill mode – less pressure, more air.",
+        let up = d > before;
+        let words = match d {
+            d if d > 0.9 => "Full send, fam. Maximum pressure.",
+            d if d > 0.5 => "Turning it up – more drive, more hits. Feel that?",
+            d if d > 0.1 => "A bit more push, bro.",
+            d if d > -0.1 && up => "Waking it back up, bro. Middle of the road.",
+            d if d > -0.1 => "Taking the edge off, bro. Middle of the road.",
+            d if d > -0.5 => "Easing off a little, bro.",
+            d if d > -0.9 => "Chill mode – less pressure, more air.",
             _ => "Deep chill, brother. Floating.",
         };
-        self.bunk(format!("{words} → {goal:.0} BPM"), now);
+        let bpm = self.glide_bpm.map_or(self.song.bpm, |g| g.0);
+        self.bunk(format!("{words} → {bpm:.0} BPM"), now);
     }
 
     /// AUTO FX on or off (the gear, or `fx` in the terminal)
@@ -3116,9 +3123,11 @@ impl SolarumApp {
         if shuf.clicked() {
             self.command("shuffle", now);
         }
-        self.os_drive(
+        let energy = self.song.macros.energy;
+        self.os_energy(
             ui,
             Rect::from_min_max(pos2(row.left(), row.bottom() + 6.0), pos2(row.right(), row.bottom() + 22.0)),
+            energy,
             now,
         );
         off.clicked()
@@ -3171,52 +3180,90 @@ impl SolarumApp {
         }
     }
 
-    /// The drive slider under the menu: CHILL … TURN UP in seven steps, the middle normal.
-    /// Click or drag; Solari answers when you let go (`chill` and `turnup` do the same)
-    fn os_drive(&mut self, ui: &mut Ui, row: Rect, now: f64) {
+    /// The energy slider under the menu – the one lever for how much pressure there is. The
+    /// lit cells are the energy playing now. By hand (AUTO FX off) it sets the energy. With
+    /// AUTO FX Solari steers the energy through the cycle, and the slider lifts or lowers all
+    /// of it (`set_drive`): drag right and the set runs hotter, busier and a touch faster,
+    /// left calmer, airier and a touch slower. The notch under it shows the lift.
+    fn os_energy(&mut self, ui: &mut Ui, row: Rect, energy: f32, now: f64) {
         let p = ui.painter().clone();
-        let mono = egui::FontId::monospace(9.5);
-        let left = p.text(row.left_center(), Align2::LEFT_CENTER, "CHILL", mono.clone(), alpha(ACID, 0.7));
-        let right = p.text(row.right_center(), Align2::RIGHT_CENTER, "TURN UP", mono, alpha(ACID, 0.7));
-        let track = Rect::from_min_max(pos2(left.right() + 8.0, row.top()), pos2(right.left() - 8.0, row.bottom()));
-        let resp = ui.interact(track, ui.id().with("os_drive"), Sense::click_and_drag());
-        let level = (self.drive * 3.0).round() as i32;
-        let id = ui.id().with("os_drive_from");
-        if resp.drag_started() || resp.is_pointer_button_down_on() && !ui.data(|d| d.get_temp::<f32>(id).is_some()) {
-            ui.data_mut(|d| d.insert_temp(id, self.drive));
+        let mono = egui::FontId::monospace;
+        p.text(row.left_center(), Align2::LEFT_CENTER, "ENERGY", mono(10.0), alpha(ACID, 0.7));
+        let num = p.text(
+            row.right_center(),
+            Align2::RIGHT_CENTER,
+            format!("{:>3.0}", energy * 100.0),
+            mono(10.0),
+            ACID,
+        );
+        let track = Rect::from_min_max(pos2(row.left() + 50.0, row.top()), pos2(num.left() - 8.0, row.bottom()));
+        let resp = ui.interact(track, ui.id().with("os_energy"), Sense::click_and_drag());
+        let steer = self.energy_locked();
+        let song = self.song_form.is_some();
+        let v_at = |x: f32| ((x - track.left()) / track.width()).clamp(0.0, 1.0);
+        if let Some(pos) = resp.interact_pointer_pos().filter(|_| !song) {
+            if steer {
+                // Pull the energy towards the pointer: from where it was when you grabbed it
+                let id = ui.id().with("os_energy_grab");
+                if resp.drag_started() || resp.clicked() || !ui.data(|d| d.get_temp::<(f32, f32, f32)>(id).is_some()) {
+                    ui.data_mut(|d| d.insert_temp(id, (energy, self.drive, self.drive)));
+                }
+                let (e0, d0, _) = ui
+                    .data(|d| d.get_temp::<(f32, f32, f32)>(id))
+                    .unwrap_or((energy, self.drive, self.drive));
+                self.set_drive(d0 + (v_at(pos.x) - e0) * 2.5);
+                if resp.drag_stopped() || resp.clicked() {
+                    ui.data_mut(|d| d.remove_temp::<(f32, f32, f32)>(id));
+                    self.say_drive(d0, now);
+                }
+            } else {
+                self.glide_energy = None;
+                self.set_energy(v_at(pos.x), now);
+            }
         }
-        if let Some(pos) = resp.interact_pointer_pos() {
-            let k = ((pos.x - track.left()) / track.width() * 7.0).floor().clamp(0.0, 6.0) as i32 - 3;
-            self.set_drive(k);
+        if resp.clicked() && song {
+            self.say(self.energy_hint(), now);
         }
-        if resp.drag_stopped() || resp.clicked() {
-            let before = ui.data_mut(|d| d.remove_temp::<f32>(id)).unwrap_or(self.drive);
-            self.say_drive(before, now);
-        }
-        // Seven cells, growing from the middle out: cooler to the left, hotter to the right
-        let cw = track.width() / 7.0;
+        // The cells: the energy playing now, like an old level meter
+        let n = 24;
+        let cw = track.width() / n as f32;
         let hot = resp.hovered() || resp.dragged();
-        for i in 0..7i32 {
-            let k = i - 3;
-            let h = 5.0 + 2.0 * k.unsigned_abs() as f32;
-            let c = pos2(track.left() + (i as f32 + 0.5) * cw, track.center().y);
-            let cell = Rect::from_center_size(c, vec2(cw - 3.0, h));
-            let lit = if level >= 0 { k >= 0 && k <= level } else { k <= 0 && k >= level };
-            let a = if k == level {
+        let cells = Rect::from_min_max(track.left_top() + vec2(0.0, 2.0), track.right_bottom() - vec2(0.0, 5.0));
+        for i in 0..n {
+            let on = energy >= (i as f32 + 0.5) / n as f32;
+            let r = Rect::from_min_size(pos2(cells.left() + i as f32 * cw, cells.top()), vec2(cw - 2.0, cells.height()));
+            let a = if on {
                 1.0
-            } else if lit {
-                0.55
             } else if hot {
-                0.2
+                0.22
             } else {
                 0.12
             };
-            p.rect_filled(cell, 1.0, alpha(ACID, a));
+            p.rect_filled(r, 1.0, alpha(ACID, a));
         }
-        resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(
-            "How much pressure Solari puts on – not just the tempo: left is calmer, airier and a little slower, \
-             right is busier, hotter and a little faster (or type chill / turnup)",
-        );
+        // With AUTO FX: a hairline under it, the middle marked, and a notch where the lift is
+        if steer {
+            let y = track.bottom() - 1.5;
+            p.line_segment([pos2(track.left(), y), pos2(track.right(), y)], stroke(1.0, alpha(ACID, 0.2)));
+            let mid = track.center().x;
+            p.line_segment([pos2(mid, y - 2.0), pos2(mid, y + 1.0)], stroke(1.0, alpha(ACID, 0.35)));
+            let at = pos2(mid + self.drive * track.width() * 0.5, y);
+            p.add(egui::Shape::convex_polygon(
+                vec![at + vec2(-3.0, 2.0), at + vec2(3.0, 2.0), at + vec2(0.0, -2.5)],
+                ACID,
+                egui::Stroke::NONE,
+            ));
+        }
+        let tip = if song {
+            "The song steers the energy"
+        } else if steer {
+            "Energy: Solari steers it through the cycle. Drag to lift or lower the whole set – right is hotter, \
+             busier and a touch faster, left calmer, airier and a touch slower (or type turnup / chill). \
+             The notch shows how far you've moved it."
+        } else {
+            "Energy: what plays – low is a break, from 85 up everything plays (or type turnup / chill)"
+        };
+        resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(tip);
     }
 
     /// Solari's manual (type help): every command by topic with what it does, in a window
@@ -3244,8 +3291,8 @@ impl SolarumApp {
                 &[
                     ("drop", "a build-up now, the drop on the bar after", Do::Run("drop")),
                     ("fx on · off", "I play breakdowns and drops myself", Do::Run("fx")),
-                    ("turnup", "more pressure: busier, hotter, faster", Do::Run("turnup")),
-                    ("chill", "less pressure: airier, calmer, slower", Do::Run("chill")),
+                    ("turnup", "more energy – with AUTO FX hotter and faster", Do::Run("turnup")),
+                    ("chill", "less energy – with AUTO FX calmer and slower", Do::Run("chill")),
                     ("every 8", "how often I change something: 1–16 bars", Do::Type("every ")),
                 ],
             ),
@@ -4172,7 +4219,7 @@ impl SolarumApp {
                     row(ui, ph::MUSIC_NOTES, "5 · Mood & pitch", "MOOD (in the tempo box's menu at the top) picks the notes and chords of bass and synth – from Dark and Hypnotic to Euphoric, Sunny or Mysterious. On Auto every shuffle picks one that suits the vibe; a mood you pick stays. KEY (top right) moves the whole song to another key.");
                     row(ui, ph::LIGHTNING, "6 · Energy & drop", "The energy bar is the arrangement, not the volume (← →): under 30 a break with no kick and bass, then the tracks come in one by one, from 70 everything plays (a track the energy takes out is muted – the mute button shows it); by hand it starts full. DROP (B) builds up for two bars and drops.");
                     row(ui, ph::WAVEFORM, "7 · Effects & sound", "Hold STUTTER (Q), ECHO (W), WASH (E), CRUSH (X), GATE (C) or TAPE STOP (V) and combine them; The filter pad: left low-pass, right high-pass, up resonance – it springs back when you let go. Top right: the character pad (up DARK, right ACID), SPACE, PUMP, KEY (the song's key – the planets' notes stay steps of the scale) and DRIVE, and the EQ curve – drag its points. Double-click resets.");
-                    row(ui, ph::INFINITY, "8 · Auto mode", "The computer under the mood is the auto mode: its power button switches it on, Solari says hello and keeps the groove moving – something changes every 1 to 16 bars (SET in its title bar, where AUTO FX is too; OFF switches it off). Type to Solari (help opens its manual): shuffle, vibe acid, drop, like, nope, taste, chill, turnup, fx off, every 8, mood dark, bpm 135, status, joke, off. Every change is picked by ear from six tries, and the groove comes back to its theme before the drop. The CHILL … TURN UP slider sets how much pressure it puts on. Thumb its last move up or down and it learns your taste; a track you edit stays yours for two phrases. With AUTO FX on it also steers the energy and plays breakdowns, build-ups and drops by itself – the map shows the cycle ahead. With AUTO FX off the energy bar is yours and no track is ever taken out.");
+                    row(ui, ph::INFINITY, "8 · Auto mode", "The computer under the mood is the auto mode: its power button switches it on, Solari says hello and keeps the groove moving – something changes every 1 to 16 bars (SET in its title bar, where AUTO FX is too; OFF switches it off). Type to Solari (help opens its manual): shuffle, vibe acid, drop, like, nope, taste, chill, turnup, fx off, every 8, mood dark, bpm 135, status, joke, off. Every change is picked by ear from six tries, and the groove comes back to its theme before the drop. With AUTO FX the ENERGY slider under its menu lifts or lowers the whole set – hotter, busier, a touch faster, or the other way. Thumb its last move up or down and it learns your taste; a track you edit stays yours for two phrases. With AUTO FX on it also steers the energy and plays breakdowns, build-ups and drops by itself – the map shows the cycle ahead. With AUTO FX off the energy bar is yours and no track is ever taken out.");
                     row(ui, ph::STACK, "9 · Favorites & auto song", "Click + under the space window to keep what you hear (twelve slots), click a full one to switch on the next bar, right-click to rename, save over or clear. AUTO SONG (the arrow next to the record button) makes a whole track from favorite 1 – a quiet intro, two or three drops, favorite 2 after the first – while you jam along. Click a part in the strip to jump there.");
                     row(ui, ph::RECORD, "10 · Record", "The red record button at the top (R) records everything you hear until you click it again – then save it as a WAV. An AUTO SONG records itself.");
                     row(ui, ph::SPARKLE, "11 · Visualizers", "Two fullscreen shows for a projector, with a small energy bar at the bottom: LIGHTS (P) – a spectrum ring, shockwaves and stars – and FACE (O) – a low-poly head that nods in time, glitches in a build-up, and on the drop screams with laser eyes, cracks and bursts apart. All keys keep working. Esc or a double-click goes back.");

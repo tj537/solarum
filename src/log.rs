@@ -47,6 +47,8 @@ pub struct Where {
     pub every: u64,
     /// Bars until the next change lands (None: none planned before the drop)
     pub next: Option<u64>,
+    /// How far the energy slider lifts (or lowers) the set, −1…1
+    pub drive: f32,
 }
 
 impl Where {
@@ -57,6 +59,7 @@ impl Where {
         Where {
             depth: shared.cycle_depth.load(Ordering::Relaxed) as f32 / 1000.0,
             every: every.max(1) as u64,
+            drive: f32::from_bits(shared.drive.load(Ordering::Relaxed)),
             next: (next != u64::MAX && next >= bar_now).then(|| next - bar_now),
             bar: bar_now.saturating_sub(start),
             len: shared.cycle_len.load(Ordering::Relaxed).max(1) as u64,
@@ -340,29 +343,15 @@ impl Log {
                 Some(n) => format!("CHANGE IN {}", n.max(1)),
                 None => String::new(),
             };
-            let e = energy.map_or(String::new(), |e| format!("ENERGY {:.0}", e * 100.0));
-            p.text(pos2(inner.left(), top), Align2::LEFT_TOP, e, mono(10.0), alpha(ACID, 0.7));
+            // How far the energy slider moved the set
+            let lift = match w.drive {
+                d if d > 0.05 => format!("TURNED UP +{:.0}", d * 100.0),
+                d if d < -0.05 => format!("CHILLED {:.0}", d * 100.0),
+                _ => String::new(),
+            };
+            p.text(pos2(inner.left(), top), Align2::LEFT_TOP, lift, mono(10.0), alpha(ACID, 0.7));
             p.text(pos2(inner.right(), top), Align2::RIGHT_TOP, next, mono(10.0), alpha(ACID, 0.7));
             top += 14.0;
-        } else if let Some(e) = energy {
-            // The energy the auto mode steers: a row of cells, like an old level meter
-            p.text(pos2(inner.left(), top), Align2::LEFT_TOP, "ENERGY", mono(10.0), alpha(ACID, 0.7));
-            p.text(
-                pos2(inner.right(), top),
-                Align2::RIGHT_TOP,
-                format!("{:.0}", e * 100.0),
-                mono(10.0),
-                ACID,
-            );
-            let (x0, x1) = (inner.left() + 50.0, inner.right() - 24.0);
-            let n = 24;
-            let cw = (x1 - x0) / n as f32;
-            for i in 0..n {
-                let on = e >= (i as f32 + 0.5) / n as f32;
-                let r = Rect::from_min_size(pos2(x0 + i as f32 * cw, top + 2.0), vec2(cw - 2.0, 8.0));
-                p.rect_filled(r, 1.0, if on { ACID } else { alpha(ACID, 0.12) });
-            }
-            top += 16.0;
         }
         // By hand: the bar within the 8-bar phrase, so drops and changes land on the one
         if let State::Bar(b) = state {
@@ -429,50 +418,66 @@ impl Log {
     }
 }
 
-/// The map of the cycle: the energy the auto mode plans for every bar as a row of lit columns
-/// (played ones bright, the rest dim), the breakdown and build-up shaded, the drop at the
-/// end, dots where the changes land and the bar playing now
+/// The map of the cycle: the energy the auto mode plans for every bar as a line with a soft
+/// area under it (the played part bright), dashed lines where the breakdown and the build-up
+/// start, the drop at the end, dots where the changes land and the bar playing now
 fn set_map(p: &egui::Painter, r: Rect, w: Where, energy: f32, now: f64) {
     let n = w.len.max(1);
     let x = |b: f32| r.left() + r.width() * b / n as f32;
     let groove = w.groove_end();
-    // The parts: groove bare, breakdown shaded, build-up brighter
-    let band = |from: u64, to: u64, a: f32| {
-        let rr = Rect::from_min_max(pos2(x(from as f32), r.top()), pos2(x(to as f32), r.bottom()));
-        p.rect_filled(rr, 2.0, alpha(ACID, a));
-    };
-    if let Some(b) = w.brk {
-        band(b, n.saturating_sub(2), 0.035);
-    }
-    band(n.saturating_sub(2), n, 0.07);
-    // Phrases
+    let build = n.saturating_sub(2);
+    let at = w.brk.unwrap_or(build);
+    let y = |e: f32| r.bottom() - (r.height() - 2.0) * e.clamp(0.04, 1.0);
+    let plan = |b: u64| crate::engine::curve(b, n, at, w.depth, w.heat, w.drive);
+    // Phrases: faint lines every 8 bars
     for k in (8..n).step_by(8) {
-        p.line_segment(
-            [pos2(x(k as f32), r.top()), pos2(x(k as f32), r.bottom())],
-            stroke(1.0, alpha(ACID, 0.1)),
-        );
+        let kx = x(k as f32);
+        p.line_segment([pos2(kx, r.top()), pos2(kx, r.bottom())], stroke(1.0, alpha(ACID, 0.07)));
     }
-    // The planned energy, one column per few pixels
-    let cols = ((r.width() / 3.0) as usize).max(8);
-    let cw = r.width() / cols as f32;
-    let at = w.brk.unwrap_or(n.saturating_sub(2));
-    for i in 0..cols {
-        let b = ((i as f32 + 0.5) / cols as f32 * n as f32) as u64;
-        let e = crate::engine::curve(b, n, at, w.depth, w.heat).clamp(0.05, 1.0);
-        let h = (r.height() - 2.0) * e;
-        let col = Rect::from_min_max(
-            pos2(r.left() + i as f32 * cw + 0.5, r.bottom() - h),
-            pos2(r.left() + (i + 1) as f32 * cw - 0.5, r.bottom()),
-        );
-        let a = if b < w.bar {
-            0.75
-        } else if b == w.bar {
-            1.0
-        } else {
-            0.22
-        };
-        p.rect_filled(col, 0.5, alpha(ACID, a));
+    // The area under the plan, bar by bar
+    // (bars at the same level and on the same side of now are one piece – no seams)
+    let mut b = 0;
+    while b < n {
+        let (level, past) = (plan(b), b <= w.bar);
+        let mut end = b + 1;
+        while end < n && (plan(end) - level).abs() < 1e-4 && (end <= w.bar) == past {
+            end += 1;
+        }
+        let col = Rect::from_min_max(pos2(x(b as f32), y(level)), pos2(x(end as f32), r.bottom()));
+        p.rect_filled(col, 0.0, alpha(ACID, if past { 0.28 } else { 0.08 }));
+        b = end;
     }
+    // The line through it: played bright, ahead dimmer
+    let point = |b: u64| pos2(x(b as f32 + 0.5), y(plan(b)));
+    let split = w.bar.min(n - 1);
+    let past: Vec<Pos2> = (0..=split).map(point).collect();
+    let ahead: Vec<Pos2> = (split..n).map(point).collect();
+    p.add(egui::Shape::line(ahead, stroke(1.5, alpha(ACID, 0.5))));
+    p.add(egui::Shape::line(past, stroke(1.5, ACID)));
+    // Where the breakdown and the build-up start, and their names when there's room
+    let mark = |b: u64, label: &str| {
+        let bx = x(b as f32);
+        p.extend(egui::Shape::dashed_line(
+            &[pos2(bx, r.top()), pos2(bx, r.bottom())],
+            stroke(1.0, alpha(ACID, 0.45)),
+            2.0,
+            2.0,
+        ));
+        let room = x(if b == build { n as f32 } else { build as f32 }) - bx;
+        if room > 30.0 {
+            p.text(
+                pos2(bx + 3.0, r.top()),
+                Align2::LEFT_TOP,
+                label,
+                FontId::monospace(8.0),
+                alpha(ACID, 0.6),
+            );
+        }
+    };
+    if w.brk.is_some() {
+        mark(at, "BREAK");
+    }
+    mark(build, "BUILD");
     // Now: a bright line and where the energy really is
     let px = x(w.bar as f32 + 0.5);
     p.line_segment([pos2(px, r.top() - 2.0), pos2(px, r.bottom() + 1.0)], stroke(1.5, ACID));
@@ -599,6 +604,7 @@ mod tests {
             depth: 0.2,
             every: 4,
             next: None,
+            drive: 0.0,
         })
     }
 
