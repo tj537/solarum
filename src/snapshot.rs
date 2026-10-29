@@ -273,6 +273,11 @@ mod tests {
         });
         render("sounds_empty", 1100.0, 700.0, |app| app.lib_ui.show_for(None));
         render("sounds_draw", 1360.0, 860.0, |app| app.lib_ui.draw_surprise(4));
+        render("sounds_start", 1360.0, 860.0, |app| app.lib_ui.show_start(false));
+        render("sounds_start_real", 1360.0, 860.0, |app| app.lib_ui.show_start(true));
+        render("sounds_template", 1360.0, 860.0, |app| {
+            app.lib_ui.draw_template(crate::song::Voice::Kick)
+        });
         // Just recorded: not in the list yet, Save puts it there
         render("sounds_draft", 1100.0, 700.0, |app| {
             let noise: Vec<f32> = (0..30_000)

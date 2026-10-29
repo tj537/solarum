@@ -3904,6 +3904,10 @@ impl SolarumApp {
                     LibOut::Assign(voice, k) => {
                         self.song.track_mut(voice).sound = CUSTOM + k as u8;
                     }
+                    LibOut::Kit(v) => {
+                        let data = crate::engine::render_hit(&self.song, v);
+                        self.lib_ui.adopt_kit(&mut self.library, v, data, now);
+                    }
                     LibOut::Use(id) => {
                         if let (Some(sound), Some(v)) = (self.use_sample(id, now), self.library.get(id).map(|e| e.voice)) {
                             self.song.track_mut(v).sound = sound;

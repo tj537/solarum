@@ -455,6 +455,8 @@ pub const DRAW_COLUMNS: usize = 256;
 #[derive(Clone, PartialEq)]
 pub struct Drawing {
     pub pitch: Vec<Option<f32>>,
+    /// How loud every column is (0 … 1) – painted in the lane under the line
+    pub level: Vec<f32>,
     /// 0 = soft (a sine with a little overtone), 1 = bright (a saw), 2 = air (filtered noise)
     pub wave: u8,
     /// Seconds
@@ -465,6 +467,7 @@ impl Default for Drawing {
     fn default() -> Self {
         Drawing {
             pitch: vec![None; DRAW_COLUMNS],
+            level: vec![1.0; DRAW_COLUMNS],
             wave: 0,
             length: 1.0,
         }
@@ -489,8 +492,12 @@ pub fn render_drawing(d: &Drawing) -> Vec<f32> {
     let mut out = Vec::with_capacity(n);
     for i in 0..n {
         let c = (i * cols / n).min(cols - 1);
+        // the loudness glides from column to column, so a painted decay sounds smooth
+        let f = (i * cols) as f32 / n as f32 - c as f32;
+        let lv = |k: usize| d.level.get(k.min(cols - 1)).copied().unwrap_or(1.0);
+        let level = lv(c) + (lv(c + 1) - lv(c)) * f;
         let (want_hz, want_amp) = match d.pitch[c] {
-            Some(p) => (drawn_hz(p), 1.0),
+            Some(p) => (drawn_hz(p), level.clamp(0.0, 1.0)),
             None => (hz, 0.0),
         };
         if hz == 0.0 {
@@ -502,7 +509,9 @@ pub fn render_drawing(d: &Drawing) -> Vec<f32> {
         let x = match d.wave {
             1 => (2.0 * phase - 1.0) * 0.6,
             2 => {
-                bp.set(hz.clamp(60.0, 12_000.0), 5.0, sr);
+                // narrow and whistling down low, wide and hissing up high (hats, claps)
+                let q = (5.0 - hz / 1200.0).max(0.9);
+                bp.set(hz.clamp(60.0, 12_000.0), q, sr);
                 bp.run(rng.noise()).bp * 2.5
             }
             _ => (phase * TAU).sin() + (phase * TAU * 2.0).sin() * 0.25,
@@ -564,7 +573,85 @@ pub fn surprise(rng: &mut crate::rng::Rng) -> (Drawing, &'static str) {
         &["Signal", "Mayday", "First contact"],
         &["Morse", "Satellite song", "Beeps"],
     ];
-    (Drawing { pitch, wave, length }, *rng.pick(names[kind as usize]))
+    let level = vec![1.0; n];
+    (
+        Drawing {
+            pitch,
+            level,
+            wave,
+            length,
+        },
+        *rng.pick(names[kind as usize]),
+    )
+}
+
+/// A starting point for every track, ready to paint over: the line, its loudness, the wave
+/// and the length that make it sound like a kick, a clap, a hat …
+pub fn template(v: Voice) -> Drawing {
+    let n = DRAW_COLUMNS;
+    let x = |i: usize| i as f32 / (n - 1) as f32;
+    let decay = |k: f32| (0..n).map(|i| (-x(i) * k).exp()).collect::<Vec<f32>>();
+    let flat = |p: f32| vec![Some(p); n];
+    let (pitch, level, wave, length) = match v {
+        // A fast fall from a click to the sub, fading out
+        Voice::Kick => (
+            (0..n).map(|i| Some(0.07 + 0.42 * (-x(i) * 14.0).exp())).collect(),
+            (0..n).map(|i| (1.0 - x(i)).powf(1.6)).collect(),
+            0,
+            0.5,
+        ),
+        // Three quick slaps and a tail of air
+        Voice::Clap => (
+            flat(0.78),
+            (0..n)
+                .map(|i| {
+                    let t = x(i);
+                    if t < 0.18 {
+                        let k = (t / 0.06).fract();
+                        (1.0 - k * 1.6).max(0.15)
+                    } else {
+                        0.8 * (-(t - 0.18) * 6.0).exp()
+                    }
+                })
+                .collect(),
+            2,
+            0.35,
+        ),
+        Voice::Rim => (flat(0.62), decay(9.0), 1, 0.12),
+        Voice::Hat => (flat(0.98), decay(10.0), 2, 0.08),
+        Voice::OpenHat => (flat(0.96), decay(4.0), 2, 0.45),
+        Voice::Ride => ((0..n).map(|i| Some(0.9 - x(i) * 0.04)).collect(), decay(3.0), 2, 1.4),
+        // A round low note that lets go at the end
+        Voice::Bass => (
+            flat(0.18),
+            (0..n)
+                .map(|i| {
+                    if x(i) < 0.75 {
+                        1.0 - x(i) * 0.3
+                    } else {
+                        0.78 * (1.0 - x(i)) / 0.25
+                    }
+                })
+                .collect(),
+            0,
+            0.4,
+        ),
+        // A buzzing note that slides up
+        Voice::Acid => (
+            (0..n)
+                .map(|i| Some(if x(i) < 0.55 { 0.45 } else { 0.45 + (x(i) - 0.55) * 0.35 }))
+                .collect(),
+            (0..n).map(|i| 1.0 - x(i) * 0.5).collect(),
+            1,
+            0.3,
+        ),
+    };
+    Drawing {
+        pitch,
+        level,
+        wave,
+        length,
+    }
 }
 
 // ───────────────────────────── Files ─────────────────────────────
@@ -814,6 +901,46 @@ mod tests {
                 (t * 900.0).sin() * (-t / 0.03).exp() * 0.8 + rng.noise() * 0.001
             })
             .collect()
+    }
+
+    #[test]
+    fn every_track_has_a_template_that_sounds() {
+        for v in Voice::ALL {
+            let d = template(v);
+            assert_eq!(d.pitch.len(), DRAW_COLUMNS);
+            assert_eq!(d.level.len(), DRAW_COLUMNS);
+            let x = render_drawing(&d);
+            let peak = x.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+            assert!(peak > 0.1 && peak <= 1.0, "{}: peak {peak}", v.name());
+            // drums die away: the last tenth is much softer than the start
+            if !v.is_synth() {
+                let tail = &x[x.len() * 9 / 10..];
+                let end = tail.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+                assert!(end < peak * 0.5, "{} doesn't decay", v.name());
+            }
+        }
+    }
+
+    #[test]
+    fn loudness_lane_shapes_the_sound() {
+        let mut d = template(Voice::Bass);
+        d.level = vec![0.0; DRAW_COLUMNS];
+        assert!(render_drawing(&d).iter().all(|s| s.abs() < 1e-3), "silent at zero loudness");
+    }
+
+    #[test]
+    fn kit_hits_render_for_every_track() {
+        let song = crate::gen::generate(crate::song::Vibe::Peak, &Default::default(), &mut crate::rng::Rng::new(5));
+        for v in Voice::ALL {
+            let x = crate::engine::render_hit(&song, v);
+            let peak = x.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+            assert!(
+                x.len() > 1000 && peak > 0.05 && peak <= 1.0,
+                "{}: {} samples, peak {peak}",
+                v.name(),
+                x.len()
+            );
+        }
     }
 
     #[test]

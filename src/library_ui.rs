@@ -23,6 +23,15 @@ pub enum Out {
     Assign(Voice, usize),
     /// Give this sound a slot and put it on its track
     Use(u64),
+    /// Copy the kit's own sound of this track into the library, to edit it
+    Kit(Voice),
+}
+
+/// What the pen does on the drawing board
+#[derive(Clone, Copy, PartialEq)]
+enum Tool {
+    Pen,
+    Erase,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -73,7 +82,20 @@ pub struct LibraryUi {
     /// The drawing board for a new sound, and the last column the pen was at
     drawing: Option<library::Drawing>,
     draw_name: &'static str,
-    pen: Option<(usize, f32)>,
+    /// The track the drawing is for (its colour, and where it goes)
+    draw_voice: Voice,
+    /// The template it started from (Reset goes back there)
+    template: Option<library::Drawing>,
+    draw_undo: Vec<library::Drawing>,
+    draw_redo: Vec<library::Drawing>,
+    tool: Tool,
+    /// The last column the pen was at, its value, and the lane (0 = pitch, 1 = loudness)
+    pen: Option<(usize, f32, u8)>,
+    /// The start page: every way to make a sound; templates are painted or the kit's real ones
+    start: bool,
+    real: bool,
+    /// Little waveforms of the templates, one per track (made once)
+    thumbs: Vec<Vec<f32>>,
     /// Space this frame (taken before any button can see it)
     space: bool,
     /// The edited sound as a waveform, for the buffer it was made from
@@ -106,7 +128,15 @@ impl Default for LibraryUi {
             unsaved: false,
             drawing: None,
             draw_name: "Drawing",
+            draw_voice: Voice::Rim,
+            template: None,
+            draw_undo: Vec::new(),
+            draw_redo: Vec::new(),
+            tool: Tool::Pen,
             pen: None,
+            start: false,
+            real: false,
+            thumbs: Vec::new(),
             space: false,
             shown: None,
             rng: crate::rng::Rng::from_clock(),
@@ -349,6 +379,23 @@ impl LibraryUi {
 
     pub fn select(&mut self, id: u64) {
         self.selected = Some(id);
+        self.start = false;
+    }
+
+    /// The kit's own sound of a track, rendered by the app: a new draft to cut and shape
+    pub fn adopt_kit(&mut self, lib: &mut Library, voice: Voice, data: Vec<f32>, now: f64) {
+        let n = lib.entries.iter().filter(|e| e.voice == voice).count() + 1;
+        let id = lib.add(&format!("{} {n}", voice.name()), voice, data);
+        lib.set_draft(id, true);
+        self.drawing = None;
+        self.select(id);
+        self.say("The kit's own sound – cut it, shape it, then Save", now);
+    }
+
+    fn open_start(&mut self) {
+        self.start = true;
+        self.drawing = None;
+        self.record_panel = false;
     }
 
     /// All eight slots are playing: open the screen and ask which one this sound replaces
@@ -508,51 +555,21 @@ impl LibraryUi {
         }
         ui_top.add_space(14.0);
         ui_top.label(egui::RichText::new("SOUNDS").font(display(34.0)).color(TEXT));
-        // + New sound: a click draws one; the arrow has the other ways
+        // + New sound opens the start page (every way to make one, templates first)
         ui_top.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.spacing_mut().item_spacing.x = 2.0;
-            let arrow = chip(ui, ph::CARET_DOWN, false, ACID).on_hover_text("More ways to make a sound");
-            let plus = {
-                let g = ui.painter().layout_no_wrap(format!("{}  New sound", ph::PLUS), bold(14.0), BG);
-                let (br, resp) = ui.allocate_exact_size(g.size() + vec2(34.0, 16.0), Sense::click());
-                let hot = resp.hovered();
-                ui.painter()
-                    .rect_filled(br, br.height() / 2.0, if hot { Color32::WHITE } else { ACID });
-                ui.painter().galley(br.center() - g.size() / 2.0, g, BG);
-                resp.on_hover_text("Draw a sound").on_hover_cursor(egui::CursorIcon::PointingHand)
-            };
-            if plus.clicked() {
-                self.start_drawing(None);
+            let g = ui.painter().layout_no_wrap(format!("{}  New sound", ph::PLUS), bold(14.0), BG);
+            let (br, resp) = ui.allocate_exact_size(g.size() + vec2(34.0, 16.0), Sense::click());
+            let on = self.start || resp.hovered();
+            ui.painter()
+                .rect_filled(br, br.height() / 2.0, if on { Color32::WHITE } else { ACID });
+            ui.painter().galley(br.center() - g.size() / 2.0, g, BG);
+            if resp
+                .on_hover_text("Start from a track's sound, a blank board, your mic or a file (⌘N)")
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .clicked()
+            {
+                self.open_start();
             }
-            let popup = ui.make_persistent_id("new_sound");
-            if arrow.clicked() {
-                ui.memory_mut(|m| m.toggle_popup(popup));
-            }
-            egui::popup_below_widget(ui, popup, &arrow, egui::PopupCloseBehavior::CloseOnClick, |ui| {
-                ui.set_min_width(230.0);
-                let item = |ui: &mut Ui, icon: &str, title: &str, sub: &str| {
-                    ui.add(
-                        egui::Button::new(egui::RichText::new(format!("{icon}  {title}\n     {sub}")).font(bold(13.0)))
-                            .min_size(vec2(220.0, 44.0)),
-                    )
-                };
-                if item(ui, ph::PENCIL_SIMPLE, "Draw", "paint a line, hear it").clicked() {
-                    self.start_drawing(None);
-                }
-                if item(ui, ph::SPARKLE, "Surprise me", "a random space sound to play with").clicked() {
-                    let d = library::surprise(&mut self.rng);
-                    self.start_drawing(Some(d));
-                }
-                if item(ui, ph::MICROPHONE, "Record", "from your microphone").clicked() {
-                    self.record_panel = true;
-                    self.inputs = library::inputs();
-                }
-                if item(ui, ph::UPLOAD_SIMPLE, "Import", "WAV, AIFF, MP3, FLAC, OGG").clicked() {
-                    if let Some(paths) = rfd::FileDialog::new().add_filter("Audio", &library::EXTENSIONS).pick_files() {
-                        self.import(lib, &paths, now);
-                    }
-                }
-            });
         });
 
         let body_r = Rect::from_min_max(pos2(full.left() + margin, top.bottom() + 12.0), full.max - vec2(margin, margin));
@@ -564,6 +581,7 @@ impl LibraryUi {
         let blocked = self.record_panel || self.replace.is_some() || self.confirm_delete.is_some();
         match self.selected {
             _ if self.drawing.is_some() => self.draw_board(ui, edit_r, lib, playhead, blocked, &mut out, now),
+            _ if self.start || lib.entries.is_empty() => self.start_page(ui, edit_r, lib, blocked, &mut out, now),
             Some(id) => self.editor(ui, edit_r, lib, slots, id, playhead, blocked, &mut out, now),
             None => empty_state(&p, edit_r, lib.entries.is_empty()),
         }
@@ -641,7 +659,7 @@ impl LibraryUi {
                     ui.add_space(20.0);
                     ui.label(
                         egui::RichText::new(if lib.entries.is_empty() {
-                            "No sounds yet – press + New sound"
+                            "No sounds yet – make one on the right"
                         } else {
                             "No sounds on this track yet"
                         })
@@ -695,6 +713,7 @@ impl LibraryUi {
         if play.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
             self.drawing = None;
             self.selected = Some(id);
+            self.start = false;
             self.toggle_play(lib, id, out, now);
         }
         // Name and length
@@ -725,6 +744,7 @@ impl LibraryUi {
         }
         if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
             self.selected = Some(id);
+            self.start = false;
             if self.drawing.take().is_some() {
                 self.stop(out);
             }
@@ -1221,52 +1241,325 @@ impl LibraryUi {
     pub fn draw_surprise(&mut self, seed: u64) {
         self.open = true;
         let d = library::surprise(&mut crate::rng::Rng::new(seed));
-        self.start_drawing(Some(d));
+        self.start_drawing(Some(d), Voice::Rim, false);
     }
 
-    fn start_drawing(&mut self, from: Option<(library::Drawing, &'static str)>) {
+    /// Open the board with a track's template (for the snapshots)
+    #[cfg(test)]
+    pub fn draw_template(&mut self, v: Voice) {
+        self.open = true;
+        self.start_drawing(Some((library::template(v), template_name(v))), v, true);
+    }
+
+    /// Open the start page (for the snapshots)
+    #[cfg(test)]
+    pub fn show_start(&mut self, real: bool) {
+        self.open = true;
+        self.open_start();
+        self.real = real;
+    }
+
+    fn start_drawing(&mut self, from: Option<(library::Drawing, &'static str)>, voice: Voice, template: bool) {
         let (d, name) = from.unwrap_or((library::Drawing::default(), "Drawing"));
+        self.template = template.then(|| d.clone());
         self.drawing = Some(d);
         self.draw_name = name;
+        self.draw_voice = voice;
+        self.draw_undo.clear();
+        self.draw_redo.clear();
+        self.tool = Tool::Pen;
         self.pen = None;
         self.record_panel = false;
+        self.start = false;
     }
 
-    /// The drawing board: paint a line (higher is higher, gaps are silence), pick how it sounds
-    /// and how long it is, hear it, and keep it as a new sound
+    // ───────────── The start page ─────────────
+
+    /// Every way to a new sound: a track to start from (its template to paint over, or the
+    /// kit's real sound to cut and shape) – or a blank board, a surprise, the mic, a file
+    fn start_page(&mut self, ui: &mut Ui, r: Rect, lib: &mut Library, blocked: bool, out: &mut Vec<Out>, now: f64) {
+        if self.thumbs.is_empty() {
+            self.thumbs = Voice::ALL
+                .iter()
+                .map(|&v| {
+                    let x = library::render_drawing(&library::template(v));
+                    let k = x.len().div_ceil(60).max(1);
+                    x.chunks(k).map(|c| c.iter().fold(0.0f32, |m, s| m.max(s.abs()))).collect()
+                })
+                .collect();
+        }
+        let p = ui.painter().clone();
+        p.rect_filled(r, 14.0, mix(BG, PANEL, 0.6));
+        let inner = r.shrink(22.0);
+        let mut ui = ui.new_child(UiBuilder::new().max_rect(inner).layout(egui::Layout::top_down(egui::Align::Min)));
+        if blocked {
+            ui.disable();
+        }
+        ui.spacing_mut().item_spacing = vec2(8.0, 6.0);
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Make a sound").font(bold(26.0)).color(TEXT));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if !lib.entries.is_empty() && chip(ui, &format!("{}  Close", ph::X), false, TEXT).clicked() {
+                    self.start = false;
+                }
+            });
+        });
+        ui.label(
+            egui::RichText::new("Pick a track to start from, then make it yours. Or start from nothing.")
+                .font(body(13.0))
+                .color(DIM),
+        );
+        ui.add_space(10.0);
+        // Paint over the template, or edit the kit's real sound
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            if chip(ui, &format!("{}  Paint over it", ph::PENCIL_SIMPLE), !self.real, ACID)
+                .on_hover_text("A drawing of the track's sound – paint its pitch and loudness")
+                .clicked()
+            {
+                self.real = false;
+            }
+            if chip(ui, &format!("{}  Edit the real one", ph::WAVEFORM), self.real, ACID)
+                .on_hover_text("The kit's own sound as it plays now – cut it, pitch it, turn it round")
+                .clicked()
+            {
+                self.real = true;
+            }
+        });
+        ui.add_space(10.0);
+
+        // Eight tracks, two rows of four
+        let gap = 12.0;
+        let low_h = 92.0;
+        let grid_h = (ui.available_height() - low_h - 44.0).max(160.0);
+        let cw = (inner.width() - gap * 3.0) / 4.0;
+        let ch = ((grid_h - gap) / 2.0).min(190.0);
+        let t = ui.input(|i| i.time) as f32;
+        let mut picked = None;
+        for row in Voice::ALL.chunks(4) {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = gap;
+                for &v in row {
+                    let (cr, resp) = ui.allocate_exact_size(vec2(cw, ch), Sense::click());
+                    let col = track_color(v);
+                    let hot = resp.hovered() && !blocked;
+                    let p = ui.painter_at(cr);
+                    p.rect_filled(cr, 12.0, if hot { mix(PAD, col, 0.10) } else { PAD });
+                    p.rect_stroke(
+                        cr,
+                        12.0,
+                        stroke(if hot { 1.5 } else { 1.0 }, if hot { col } else { LINE }),
+                        egui::StrokeKind::Inside,
+                    );
+                    p.circle_filled(pos2(cr.left() + 18.0, cr.top() + 20.0), 5.0, col);
+                    p.text(
+                        pos2(cr.left() + 30.0, cr.top() + 20.0),
+                        Align2::LEFT_CENTER,
+                        v.name(),
+                        bold(15.0),
+                        TEXT,
+                    );
+                    let pic = Rect::from_min_max(pos2(cr.left() + 14.0, cr.top() + 38.0), pos2(cr.right() - 14.0, cr.bottom() - 30.0));
+                    if self.real {
+                        thumb_wave(&p, pic, &self.thumbs[v.index()], col);
+                    } else {
+                        thumb_drawing(&p, pic, &library::template(v), col);
+                    }
+                    let hint = if self.real { "Edit it" } else { "Paint it" };
+                    p.text(
+                        pos2(cr.right() - 14.0, cr.bottom() - 15.0),
+                        Align2::RIGHT_CENTER,
+                        format!("{hint}  {}", ph::ARROW_RIGHT),
+                        bold(12.0),
+                        if hot { col } else { FAINT },
+                    );
+                    if hot {
+                        // a little sweep over the picture while you look at it
+                        let x = pic.left() + (t * 0.6).fract() * pic.width();
+                        p.line_segment([pos2(x, pic.top()), pos2(x, pic.bottom())], stroke(1.0, alpha(TEXT, 0.35)));
+                        ui.ctx().request_repaint();
+                    }
+                    if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() && !blocked {
+                        picked = Some(v);
+                    }
+                }
+            });
+            ui.add_space(gap - 6.0);
+        }
+        if let Some(v) = picked {
+            if self.real {
+                out.push(Out::Kit(v));
+            } else {
+                self.start_drawing(Some((library::template(v), template_name(v))), v, true);
+                self.play_drawing(out, now);
+            }
+        }
+
+        // Or from nothing
+        ui.add_space(6.0);
+        ui.label(egui::RichText::new("OR START FROM").font(bold(11.0)).color(FAINT));
+        let bw = (inner.width() - gap * 3.0) / 4.0;
+        let mut way = None;
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            for (k, icon, title, sub) in [
+                (0, ph::PENCIL_SIMPLE_LINE, "Blank board", "draw any line, hear it"),
+                (1, ph::SPARKLE, "Surprise me", "a random space sound"),
+                (2, ph::MICROPHONE, "Record", "voice, a door, anything"),
+                (3, ph::UPLOAD_SIMPLE, "Import", "WAV, AIFF, MP3, FLAC, OGG"),
+            ] {
+                let (br, resp) = ui.allocate_exact_size(vec2(bw, low_h - 20.0), Sense::click());
+                let hot = resp.hovered() && !blocked;
+                let p = ui.painter_at(br);
+                p.rect_filled(br, 12.0, if hot { mix(PAD, ACID, 0.08) } else { PAD });
+                p.rect_stroke(br, 12.0, stroke(1.0, if hot { ACID } else { LINE }), egui::StrokeKind::Inside);
+                let c = pos2(br.left() + 34.0, br.center().y);
+                p.circle_filled(c, 20.0, if hot { ACID } else { mix(PAD, ACID, 0.18) });
+                p.text(c, Align2::CENTER_CENTER, icon, body(19.0), if hot { BG } else { ACID });
+                p.text(pos2(c.x + 32.0, br.center().y - 9.0), Align2::LEFT_CENTER, title, bold(14.0), TEXT);
+                let sub = fit_text(&p, sub, body(11.5), br.right() - c.x - 40.0);
+                p.text(pos2(c.x + 32.0, br.center().y + 10.0), Align2::LEFT_CENTER, sub, body(11.5), DIM);
+                if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() && !blocked {
+                    way = Some(k);
+                }
+            }
+        });
+        match way {
+            Some(0) => self.start_drawing(None, self.filter.unwrap_or(Voice::Rim), false),
+            Some(1) => {
+                let d = library::surprise(&mut self.rng);
+                self.start_drawing(Some(d), self.filter.unwrap_or(Voice::Rim), false);
+                self.play_drawing(out, now);
+            }
+            Some(2) => {
+                self.record_panel = true;
+                self.inputs = library::inputs();
+            }
+            Some(3) => {
+                if let Some(paths) = rfd::FileDialog::new().add_filter("Audio", &library::EXTENSIONS).pick_files() {
+                    self.start = false;
+                    self.import(lib, &paths, now);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Hear the drawing as it is now
+    fn play_drawing(&mut self, out: &mut Vec<Out>, now: f64) {
+        let Some(d) = &self.drawing else { return };
+        if d.pitch.iter().all(Option::is_none) {
+            return;
+        }
+        let buf = Arc::new(SampleBuf {
+            data: library::render_drawing(d),
+            pitch: 0.0,
+        });
+        out.push(Out::Audition(Some(buf.clone()), self.looped));
+        self.playing = Some(Playing {
+            id: 0,
+            buf,
+            from: 0.0,
+            to: d.length,
+            reverse: false,
+            whole: false,
+            since: now,
+        });
+    }
+
+    fn draw_undo_step(&mut self, back: bool) {
+        let Some(d) = self.drawing.clone() else { return };
+        let (from, to) = if back {
+            (&mut self.draw_undo, &mut self.draw_redo)
+        } else {
+            (&mut self.draw_redo, &mut self.draw_undo)
+        };
+        if let Some(prev) = from.pop() {
+            to.push(d);
+            self.drawing = Some(prev);
+        }
+    }
+
+    fn draw_checkpoint(&mut self, d: &library::Drawing) {
+        self.draw_undo.push(d.clone());
+        if self.draw_undo.len() > 60 {
+            self.draw_undo.remove(0);
+        }
+        self.draw_redo.clear();
+    }
+
+    /// The drawing board: paint a line (higher is higher, gaps are silence) and under it how
+    /// loud it is; pick the track, how it sounds and how long it is, hear it, keep it
     #[allow(clippy::too_many_arguments)]
     fn draw_board(&mut self, ui: &mut Ui, r: Rect, lib: &mut Library, playhead: Option<f64>, blocked: bool, out: &mut Vec<Out>, now: f64) {
         let Some(mut d) = self.drawing.clone() else { return };
-        let col = ACID;
+        let before = d.clone();
+        let col = track_color(self.draw_voice);
         let p = ui.painter().clone();
         p.rect_filled(r, 14.0, mix(BG, PANEL, 0.6));
         let inner = r.shrink(18.0);
         let mut ui = ui.new_child(UiBuilder::new().max_rect(inner).layout(egui::Layout::top_down(egui::Align::Min)));
         ui.spacing_mut().item_spacing = vec2(8.0, 10.0);
+        // The name, and the track it's for
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new(self.draw_name).font(bold(22.0)).color(TEXT));
-            ui.add_space(8.0);
-            ui.label(
-                egui::RichText::new("Paint a line – higher is higher, gaps are silence · right mouse button erases")
-                    .font(body(12.0))
-                    .color(DIM),
-            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                for &v in Voice::ALL.iter().rev() {
+                    if crate::widgets::chip_sized(ui, v.name(), self.draw_voice == v, track_color(v), None)
+                        .on_hover_text(format!("It goes on the {} track", v.name()))
+                        .clicked()
+                    {
+                        self.draw_voice = v;
+                    }
+                }
+                ui.add_space(4.0);
+                ui.label(egui::RichText::new("FOR").font(bold(11.0)).color(FAINT));
+            });
         });
 
-        // The board
-        let board_h = (ui.available_height() - 180.0).clamp(160.0, 420.0);
+        // The board: the line on top, its loudness below
+        let board_h = (ui.available_height() - 180.0).clamp(200.0, 470.0);
         let (board, resp) = ui.allocate_exact_size(vec2(inner.width(), board_h), Sense::click_and_drag());
-        p.rect_filled(board, 14.0, SPACE);
+        let lane_gap = 8.0;
+        let loud_h = (board_h * 0.26).clamp(56.0, 120.0);
+        let top = Rect::from_min_max(board.min, pos2(board.right(), board.bottom() - loud_h - lane_gap));
+        let low = Rect::from_min_max(pos2(board.left(), board.bottom() - loud_h), board.max);
+        p.rect_filled(top, 14.0, SPACE);
+        p.rect_filled(low, 12.0, SPACE);
         for k in 1..7 {
-            let y = board.bottom() - board.height() * k as f32 / 7.0;
+            let y = top.bottom() - top.height() * k as f32 / 7.0;
             p.line_segment(
-                [pos2(board.left() + 8.0, y), pos2(board.right() - 8.0, y)],
+                [pos2(top.left() + 8.0, y), pos2(top.right() - 8.0, y)],
                 stroke(1.0, alpha(LINE, 0.25)),
             );
         }
+        p.text(top.left_top() + vec2(12.0, 10.0), Align2::LEFT_TOP, "PITCH", bold(10.5), FAINT);
+        p.text(low.left_top() + vec2(12.0, 8.0), Align2::LEFT_TOP, "LOUDNESS", bold(10.5), FAINT);
+        p.text(
+            top.right_top() + vec2(-12.0, 10.0),
+            Align2::RIGHT_TOP,
+            "higher is higher · gaps are silence · right button erases",
+            body(11.0),
+            FAINT,
+        );
         let n = d.pitch.len();
         let col_x = |c: usize| board.left() + (c as f32 + 0.5) / n as f32 * board.width();
-        let val_y = |v: f32| board.bottom() - 10.0 - v * (board.height() - 20.0);
+        let val_y = |v: f32| top.bottom() - 10.0 - v * (top.height() - 20.0);
+        let lvl_y = |v: f32| low.bottom() - 6.0 - v * (low.height() - 26.0);
+        // Loudness: bars where the line sounds, a faint outline where it's silent
+        let bar_w = (board.width() / n as f32).max(1.0);
+        for c in 0..n {
+            let x = col_x(c);
+            let y = lvl_y(d.level[c]);
+            let on = d.pitch[c].is_some();
+            p.line_segment(
+                [pos2(x, low.bottom() - 6.0), pos2(x, y)],
+                stroke(bar_w, alpha(col, if on { 0.38 } else { 0.08 })),
+            );
+        }
+        let pts: Vec<Pos2> = (0..n).map(|c| pos2(col_x(c), lvl_y(d.level[c]))).collect();
+        p.add(Shape::line(pts, stroke(1.5, alpha(col, 0.9))));
         // The line: one stroke per run of drawn columns, with a soft glow under it
         let mut runs: Vec<Vec<Pos2>> = Vec::new();
         let mut run = Vec::new();
@@ -1290,7 +1583,7 @@ impl LibraryUi {
         }
         if d.pitch.iter().all(Option::is_none) {
             p.text(
-                board.center(),
+                top.center(),
                 Align2::CENTER_CENTER,
                 format!("{}  draw here", ph::PENCIL_SIMPLE),
                 bold(16.0),
@@ -1306,30 +1599,50 @@ impl LibraryUi {
         }
         let mut stroke_done = false;
         if !blocked {
-            let erase = ui.input(|i| i.pointer.secondary_down());
+            let erase = self.tool == Tool::Erase || ui.input(|i| i.pointer.secondary_down());
             if let Some(pos) = resp
                 .interact_pointer_pos()
                 .filter(|_| resp.is_pointer_button_down_on() || resp.dragged())
             {
+                // the lane is the one the stroke began in
+                let lane = self.pen.map_or(u8::from(pos.y > top.bottom() + lane_gap / 2.0), |(_, _, l)| l);
+                if self.pen.is_none() {
+                    self.draw_checkpoint(&d);
+                }
                 let c = (((pos.x - board.left()) / board.width() * n as f32) as isize).clamp(0, n as isize - 1) as usize;
-                let v = ((board.bottom() - 10.0 - pos.y) / (board.height() - 20.0)).clamp(0.0, 1.0);
-                let (c0, v0) = self.pen.unwrap_or((c, v));
+                let v = if lane == 0 {
+                    (top.bottom() - 10.0 - pos.y) / (top.height() - 20.0)
+                } else {
+                    (low.bottom() - 6.0 - pos.y) / (low.height() - 26.0)
+                }
+                .clamp(0.0, 1.0);
+                let (c0, v0, _) = self.pen.unwrap_or((c, v, lane));
                 let (a, b) = if c0 <= c { (c0, c) } else { (c, c0) };
                 for k in a..=b {
                     let f = if b == a { 1.0 } else { (k - a) as f32 / (b - a) as f32 };
                     let f = if c0 <= c { f } else { 1.0 - f };
-                    d.pitch[k] = if erase { None } else { Some(v0 + (v - v0) * f) };
+                    let x = v0 + (v - v0) * f;
+                    if lane == 0 {
+                        d.pitch[k] = if erase { None } else { Some(x) };
+                    } else {
+                        d.level[k] = if erase { 0.0 } else { x };
+                    }
                 }
-                self.pen = Some((c, v));
+                self.pen = Some((c, v, lane));
             } else if self.pen.take().is_some() {
                 stroke_done = true;
             }
-            resp.on_hover_cursor(egui::CursorIcon::Crosshair);
+            resp.on_hover_cursor(if self.tool == Tool::Erase {
+                egui::CursorIcon::NotAllowed
+            } else {
+                egui::CursorIcon::Crosshair
+            });
         }
 
-        // Play, loop, clear; cancel or keep it – the same row as in the editor
+        // Play, loop; the pen and the eraser; undo, reset, clear; cancel or keep it
         let mut play = stroke_done;
         let mut replay = false;
+        let mut undo = None;
         ui.horizontal(|ui| {
             let playing = self.playing.as_ref().is_some_and(|pl| pl.id == 0);
             let (pr, presp) = ui.allocate_exact_size(vec2(46.0, 46.0), Sense::click());
@@ -1364,11 +1677,51 @@ impl LibraryUi {
                 self.looped = !self.looped;
                 replay = playing;
             }
+            ui.add_space(10.0);
+            if chip(ui, &format!("{}  Pen", ph::PENCIL_SIMPLE), self.tool == Tool::Pen, col)
+                .on_hover_text("Paint the line and its loudness")
+                .clicked()
+            {
+                self.tool = Tool::Pen;
+            }
+            if chip(ui, &format!("{}  Eraser", ph::ERASER), self.tool == Tool::Erase, col)
+                .on_hover_text("Wipe out a part – silence (the right mouse button erases too)")
+                .clicked()
+            {
+                self.tool = Tool::Erase;
+            }
+            ui.add_space(10.0);
+            ui.add_enabled_ui(!self.draw_undo.is_empty(), |ui| {
+                if chip(ui, ph::ARROW_COUNTER_CLOCKWISE, false, TEXT)
+                    .on_hover_text("Undo (⌘Z)")
+                    .clicked()
+                {
+                    undo = Some(true);
+                }
+            });
+            ui.add_enabled_ui(!self.draw_redo.is_empty(), |ui| {
+                if chip(ui, ph::ARROW_CLOCKWISE, false, TEXT).on_hover_text("Redo (⇧⌘Z)").clicked() {
+                    undo = Some(false);
+                }
+            });
+            if let Some(t) = self.template.clone() {
+                if chip(ui, &format!("{}  Reset", ph::ARROWS_COUNTER_CLOCKWISE), false, TEXT)
+                    .on_hover_text("Back to the template")
+                    .clicked()
+                    && d != t
+                {
+                    self.draw_checkpoint(&d);
+                    d = t;
+                    play = true;
+                }
+            }
             if chip(ui, &format!("{}  Clear", ph::BROOM), false, TEXT)
                 .on_hover_text("Start again on an empty board")
                 .clicked()
             {
+                self.draw_checkpoint(&d);
                 d.pitch = vec![None; n];
+                d.level = vec![1.0; n];
                 self.stop(out);
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1393,16 +1746,19 @@ impl LibraryUi {
                 if bresp.clicked() && drawn {
                     let data = library::render_drawing(&d);
                     let n = lib.entries.iter().filter(|e| e.name.starts_with(self.draw_name)).count() + 1;
-                    let voice = self.filter.unwrap_or(Voice::Rim);
-                    let id = lib.add(&format!("{} {n}", self.draw_name), voice, data);
+                    let id = lib.add(&format!("{} {n}", self.draw_name), self.draw_voice, data);
                     lib.set_draft(id, true);
                     self.selected = Some(id);
                     self.drawing = None;
                     self.stop(out);
-                    self.say("Now cut it, pick its track and press Save", now);
+                    self.say("Now cut it, shape it and press Save", now);
                 }
-                if chip(ui, &format!("{}  Cancel", ph::X), false, TEXT).clicked() {
+                if chip(ui, &format!("{}  Back", ph::X), false, TEXT)
+                    .on_hover_text("Leave the board – back to the start page (Esc)")
+                    .clicked()
+                {
                     self.drawing = None;
+                    self.start = true;
                     self.stop(out);
                 }
             });
@@ -1429,15 +1785,18 @@ impl LibraryUi {
             let area = crate::controls::card(&p, rect, "LENGTH", &fmt_secs(d.length), col, hot);
             if let Some(pos) = resp.interact_pointer_pos().filter(|_| resp.dragged() || resp.clicked()) {
                 let v = ((pos.x - area.left()) / area.width()).clamp(0.0, 1.0);
-                d.length = 0.1 + v * 3.9;
+                d.length = 0.05 + v * 3.95;
             }
             if resp.double_clicked() {
                 d.length = 1.0;
             }
-            picture(&p, area, Tile::Length, ((d.length - 0.1) / 3.9).clamp(0.0, 1.0), col, 0.0);
+            picture(&p, area, Tile::Length, ((d.length - 0.05) / 3.95).clamp(0.0, 1.0), col, 0.0);
             let resp = resp
                 .on_hover_text("Click or drag: shorter to the left, longer to the right · double-click: 1 s")
                 .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+            if resp.drag_started() {
+                self.draw_checkpoint(&before);
+            }
             if resp.drag_stopped() || resp.clicked() {
                 play = true;
             }
@@ -1448,23 +1807,18 @@ impl LibraryUi {
         if self.drawing.is_none() {
             return;
         }
-        if play && d.pitch.iter().any(Option::is_some) {
-            let buf = Arc::new(SampleBuf {
-                data: library::render_drawing(&d),
-                pitch: 0.0,
-            });
-            out.push(Out::Audition(Some(buf.clone()), self.looped));
-            self.playing = Some(Playing {
-                id: 0,
-                buf,
-                from: 0.0,
-                to: d.length,
-                reverse: false,
-                whole: false,
-                since: now,
-            });
+        if d.wave != before.wave {
+            // a wave tile is one step back
+            self.draw_checkpoint(&before);
         }
         self.drawing = Some(d);
+        if let Some(back) = undo {
+            self.draw_undo_step(back);
+            play = true;
+        }
+        if play {
+            self.play_drawing(out, now);
+        }
     }
 
     /// The sound as it plays, ready to draw (made again only when the edit changed)
@@ -1519,11 +1873,24 @@ impl LibraryUi {
                 i.key_pressed(egui::Key::ArrowDown),
             )
         });
+        let new = ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::N));
+        if new && !self.record_panel {
+            self.open_start();
+        }
         if self.drawing.is_some() {
             if esc && !self.record_panel {
                 self.drawing = None;
+                self.start = true;
                 self.stop(out);
             }
+            if undo || redo {
+                self.draw_undo_step(undo);
+                self.play_drawing(out, now);
+            }
+            return;
+        }
+        if esc && self.start && !self.record_panel && !lib.entries.is_empty() {
+            self.start = false;
             return;
         }
         if esc {
@@ -1824,4 +2191,53 @@ fn empty_state(p: &egui::Painter, r: Rect, nothing: bool) {
         body(12.5),
         DIM,
     );
+}
+
+/// The name a sound painted from a track's template gets
+fn template_name(v: Voice) -> &'static str {
+    match v {
+        Voice::Kick => "My kick",
+        Voice::Clap => "My clap",
+        Voice::Rim => "My rim",
+        Voice::Hat => "My hat",
+        Voice::OpenHat => "My open hat",
+        Voice::Ride => "My ride",
+        Voice::Bass => "My bass",
+        Voice::Acid => "My acid",
+    }
+}
+
+/// A template in small: its line, and its loudness as bars underneath
+fn thumb_drawing(p: &egui::Painter, r: Rect, d: &library::Drawing, col: Color32) {
+    let n = d.pitch.len();
+    let step = 4;
+    let w = r.width() / n as f32 * step as f32;
+    for c in (0..n).step_by(step) {
+        let x = r.left() + c as f32 / n as f32 * r.width();
+        let h = d.level[c] * r.height() * 0.35;
+        p.line_segment([pos2(x, r.bottom()), pos2(x, r.bottom() - h)], stroke(w * 0.6, alpha(col, 0.28)));
+    }
+    let line = r.with_max_y(r.bottom() - r.height() * 0.2);
+    let pts: Vec<Pos2> = d
+        .pitch
+        .iter()
+        .enumerate()
+        .filter_map(|(c, v)| v.map(|v| pos2(r.left() + c as f32 / n as f32 * r.width(), line.bottom() - v * line.height())))
+        .collect();
+    p.add(Shape::line(pts.clone(), stroke(7.0, alpha(col, 0.15))));
+    p.add(Shape::line(pts, stroke(2.5, col)));
+}
+
+/// A sound in small: its peaks mirrored round the middle
+fn thumb_wave(p: &egui::Painter, r: Rect, peaks: &[f32], col: Color32) {
+    let top = peaks.iter().fold(1e-4f32, |m, x| m.max(*x));
+    let w = r.width() / peaks.len().max(1) as f32;
+    for (i, pk) in peaks.iter().enumerate() {
+        let x = r.left() + (i as f32 + 0.5) * w;
+        let h = (pk / top).max(0.02) * r.height() * 0.48;
+        p.line_segment(
+            [pos2(x, r.center().y - h), pos2(x, r.center().y + h)],
+            stroke((w * 0.6).max(1.0), col),
+        );
+    }
 }
