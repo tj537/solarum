@@ -3,10 +3,15 @@
 One screen for everyone: a beginner gets a good sound in two clicks, a pro gets every knob.
 Each step down the list gives you more control; none of them is in the way of the next.
 
-## 1. Start from something that already works
+## Two places that never mix
 
-**+ New sound** (⌘N) opens *Make a sound* – also what an empty library shows, so the first
-visit never starts on a blank page.
+- **The library** – your saved sounds on the left, the one you picked on the right. Empty
+  library: nothing but *+ New sound*.
+- **New sound** – takes the whole screen (no list to misclick), one step at a time:
+  **1 Start › 2 Draw or Record › 3 Finish**. Same spots on every step: *Cancel* top left,
+  *Back* and the one big button (*Next*, *Save*) top right; Esc is Back.
+
+## 1. Start from something that already works
 
 - **From nothing** (on top) – blank board, record, import: three cards with a picture each.
 - **Paint over a track** – eight cards in the tracks' colours, each showing its template's
@@ -23,7 +28,7 @@ The track (FOR) sets the colour and where the sound goes.
 
 ## 3. Shape it
 
-*Make it a sound* hands it to the editor: cut, fades, pitch, reverse, tone, crush – the same
+*Next* hands it to the editor: cut, fades, pitch, reverse, tone, crush – the same
 picture tiles and sliders as the main window. Save puts it on its track.
 
 ## Principles

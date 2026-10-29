@@ -273,6 +273,7 @@ mod tests {
         });
         render("sounds_empty", 1100.0, 700.0, |app| app.lib_ui.show_for(None));
         render("sounds_start", 1360.0, 860.0, |app| app.lib_ui.show_start());
+        render("sounds_record", 1360.0, 860.0, |app| app.lib_ui.show_record());
         render("sounds_template", 1360.0, 860.0, |app| {
             app.lib_ui.draw_template(crate::song::Voice::Kick)
         });
@@ -284,7 +285,7 @@ mod tests {
             let id = app.library.add("Signal 1", crate::song::Voice::Rim, noise);
             app.library.set_draft(id, true);
             app.lib_ui.show_for(None);
-            app.lib_ui.select(id);
+            app.lib_ui.finish_with(id, crate::library_ui::Step::Record);
         });
         // Solari says hello as the computer comes on (render time is ~10 s)
         render("home", 1360.0, 860.0, |app| {
