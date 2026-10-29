@@ -682,8 +682,6 @@ impl LibraryUi {
     // ───────────── The list ─────────────
 
     fn list(&mut self, ui: &mut Ui, r: Rect, lib: &mut Library, slots: &mut SlotIds, out: &mut Vec<Out>, now: f64) {
-        let p = ui.painter().clone();
-        p.rect_filled(r, 14.0, mix(BG, PANEL, 0.6));
         let inner = r.shrink(12.0);
         let mut ui = ui.new_child(UiBuilder::new().max_rect(inner).layout(egui::Layout::top_down(egui::Align::Min)));
         ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
@@ -858,7 +856,6 @@ impl LibraryUi {
         }
         let col = track_color(e.voice);
         let p = ui.painter().clone();
-        p.rect_filled(r, 14.0, mix(BG, PANEL, 0.6));
         let inner = r.shrink(18.0);
         let mut ui = ui.new_child(UiBuilder::new().max_rect(inner).layout(egui::Layout::top_down(egui::Align::Min)));
         ui.spacing_mut().item_spacing = vec2(8.0, 10.0);
@@ -1306,8 +1303,6 @@ impl LibraryUi {
     /// Every way to a new sound: a track's template to paint over – or a blank board, the
     /// mic, a file
     fn start_page(&mut self, ui: &mut Ui, r: Rect, lib: &mut Library, blocked: bool, out: &mut Vec<Out>, now: f64) {
-        let p = ui.painter().clone();
-        p.rect_filled(r, 14.0, mix(BG, PANEL, 0.6));
         let inner = r.shrink(22.0);
         let mut ui = ui.new_child(UiBuilder::new().max_rect(inner).layout(egui::Layout::top_down(egui::Align::Min)));
         if blocked {
@@ -1481,7 +1476,7 @@ impl LibraryUi {
                 } else {
                     format!("{}  {n}", k + 1)
                 };
-                p.layout_no_wrap(text, bold(13.0), TEXT)
+                p.layout_no_wrap(text, bold(13.0), Color32::PLACEHOLDER)
             })
             .collect();
         let sep = 34.0;
@@ -1591,7 +1586,6 @@ impl LibraryUi {
         let before = d.clone();
         let col = track_color(self.draw_voice);
         let p = ui.painter().clone();
-        p.rect_filled(r, 14.0, mix(BG, PANEL, 0.6));
         let inner = r.shrink(18.0);
         let mut ui = ui.new_child(UiBuilder::new().max_rect(inner).layout(egui::Layout::top_down(egui::Align::Min)));
         ui.spacing_mut().item_spacing = vec2(8.0, 10.0);
@@ -2000,8 +1994,6 @@ impl LibraryUi {
 
     /// Recording, right on the screen: the input, a big red button, what comes in
     fn record_page(&mut self, ui: &mut Ui, r: Rect, lib: &mut Library, now: f64) {
-        let p = ui.painter().clone();
-        p.rect_filled(r, 14.0, mix(BG, PANEL, 0.6));
         let w = (r.width() - 80.0).min(760.0);
         let inner = Rect::from_center_size(r.center(), vec2(w, (r.height() - 60.0).min(420.0)));
         let mut ui = ui.new_child(UiBuilder::new().max_rect(inner).layout(egui::Layout::top_down(egui::Align::Center)));

@@ -80,7 +80,7 @@ pub fn stops(ui: &mut Ui, values: &[u8], picked: u8, width: f32, color: Color32)
     (values[i] != picked).then_some(values[i])
 }
 
-/// A screen set into the concrete: a dark well, a thick bezel with a screw in each corner;
+/// A screen set into the concrete: a dark well and a thick bezel;
 /// returns the screen's rect inside it
 /// (`bezel_w`: how thick the frame is)
 pub fn bezel_frame(p: &egui::Painter, outer: Rect, radius: f32, bezel_w: f32) -> Rect {
@@ -88,19 +88,6 @@ pub fn bezel_frame(p: &egui::Painter, outer: Rect, radius: f32, bezel_w: f32) ->
     let bezel = outer.shrink(2.0);
     p.rect_filled(bezel, radius, mix(PANEL, BG, 0.45));
     p.rect_stroke(bezel, radius, stroke(1.0, Color32::from_white_alpha(9)), egui::StrokeKind::Inside);
-    let inset = 2.0 + bezel_w * 0.5;
-    for (x, y) in [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)] {
-        let c = pos2(
-            bezel.left() + inset + x * (bezel.width() - 2.0 * inset),
-            bezel.top() + inset + y * (bezel.height() - 2.0 * inset),
-        );
-        let sr = (bezel_w * 0.3).clamp(1.6, 3.0);
-        p.circle_filled(c, sr, mix(PANEL_HI, TEXT, 0.15));
-        p.line_segment(
-            [c - vec2(sr, sr) * 0.65, c + vec2(sr, sr) * 0.65],
-            stroke(0.8, mix(BG, Color32::BLACK, 0.3)),
-        );
-    }
     outer.shrink(2.0 + bezel_w)
 }
 

@@ -143,9 +143,10 @@ pub fn home(ui: &mut Ui, sounds: usize, recent: &[Recent], last: Option<(&Song, 
     // The left: the name, then the buttons
     let mut y = hero.top();
     p.text(pos2(hero.left() - 6.0, y), Align2::LEFT_TOP, "SOLARUM", display(132.0), TEXT);
-    y += 172.0;
+    // A clear gap under the name, so the buttons don't touch it
+    y += 200.0;
     let bh = 54.0;
-    let gap = 12.0;
+    let gap = 14.0;
     // New project and Open side by side
     let new_r = Rect::from_min_size(pos2(hero.left(), y), vec2(220.0, bh));
     let open_r = Rect::from_min_size(pos2(new_r.right() + gap, y), vec2(130.0, bh));

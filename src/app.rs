@@ -2766,7 +2766,7 @@ impl SolarumApp {
         let on = self.song.auto || self.song_form.is_some();
         let w = ui.available_width();
         let mut switch = false;
-        // Set into the concrete: a dark well, a thick bezel with four screws, the screen inside
+        // Set into the concrete: a dark well, a thick bezel, the screen inside
         let h_all = ui.available_height().max(if on { 160.0 } else { 80.0 });
         let (outer, _) = ui.allocate_exact_size(vec2(w, h_all), Sense::hover());
         widgets::bezel_frame(ui.painter(), outer, 13.0, 4.0);
