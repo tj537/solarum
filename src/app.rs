@@ -4289,7 +4289,8 @@ impl SolarumApp {
                 self.connect_midi(move || c.request_repaint());
             }
             let device = audio::default_device_name();
-            if self.audio_failed.load(Ordering::Relaxed) || (device.is_some() && device != self.audio_device) {
+            let broken = self.shared.broken.swap(false, Ordering::Relaxed);
+            if broken || self.audio_failed.load(Ordering::Relaxed) || (device.is_some() && device != self.audio_device) {
                 self.restart_audio(ctx, now);
             }
         }

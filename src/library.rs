@@ -59,6 +59,22 @@ impl Default for Edit {
     }
 }
 
+impl Edit {
+    /// Repair what a file can bring in: no NaN or infinity, every value in its range
+    pub fn sanitize(&mut self) {
+        let fix = |v: f32, lo: f32, hi: f32, def: f32| if v.is_finite() { v.clamp(lo, hi) } else { def };
+        self.start = fix(self.start, 0.0, MAX_SECONDS, 0.0);
+        self.end = fix(self.end, 0.0, MAX_SECONDS, 0.0);
+        self.fade_in = fix(self.fade_in, 0.0, MAX_SECONDS, 0.0);
+        self.fade_out = fix(self.fade_out, 0.0, MAX_SECONDS, 0.005);
+        self.gain = fix(self.gain, -48.0, 24.0, 0.0);
+        self.pitch = fix(self.pitch, -24.0, 24.0, 0.0);
+        self.low_cut = fix(self.low_cut, 20.0, 20_000.0, 20.0);
+        self.high_cut = fix(self.high_cut, 20.0, 20_000.0, 20_000.0);
+        self.crush = fix(self.crush, 0.0, 1.0, 0.0);
+    }
+}
+
 /// One sound in the library
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -156,6 +172,9 @@ impl Library {
         if let Ok(text) = std::fs::read_to_string(dir.join("library.ron")) {
             if let Ok(index) = ron::from_str::<Index>(&text) {
                 lib.entries = index.entries;
+                for e in &mut lib.entries {
+                    e.edit.sanitize();
+                }
             }
         }
         for e in &lib.entries {
@@ -298,10 +317,11 @@ impl Library {
         Packed { entries, sources }
     }
 
-    /// Bring a project's sounds into the library (those already there stay as they are)
+    /// Bring a project's sounds into the library (those already there stay as they are).
+    /// A project holds at most `SAMPLE_SLOTS` sounds; a file with more is cut off there.
     pub fn unpack(&mut self, p: &Packed) {
         let mut changed = false;
-        for (id, text) in &p.sources {
+        for (id, text) in p.sources.iter().take(SAMPLE_SLOTS) {
             if self.sources.contains_key(id) {
                 continue;
             }
@@ -312,9 +332,11 @@ impl Library {
             }
             self.sources.insert(*id, Arc::new(Source::new(data)));
         }
-        for e in &p.entries {
+        for e in p.entries.iter().take(SAMPLE_SLOTS) {
             if self.get(e.id).is_none() && self.sources.contains_key(&e.source) {
-                self.entries.insert(0, e.clone());
+                let mut e = e.clone();
+                e.edit.sanitize();
+                self.entries.insert(0, e);
                 changed = true;
             }
         }
@@ -391,7 +413,9 @@ pub fn render(src: &[f32], e: &Edit) -> Vec<f32> {
         if n - i <= fout {
             g *= (n - i) as f32 / fout as f32;
         }
-        *s = (*s * g).clamp(-1.0, 1.0);
+        // `clamp` lets NaN through, and one NaN in the engine's filters silences everything
+        let v = *s * g;
+        *s = if v.is_finite() { v.clamp(-1.0, 1.0) } else { 0.0 };
     }
     x
 }
@@ -689,10 +713,15 @@ fn unpack_audio(text: &str) -> Option<Vec<f32>> {
     for (i, &c) in B64.iter().enumerate() {
         val[c as usize] = i as u8 + 1;
     }
-    let mut bytes = Vec::with_capacity(text.len() * 3 / 4);
+    // A sound is at most `MAX_SECONDS` long (16-bit): a file can't make it longer
+    let max = (MAX_SECONDS * SAMPLE_SR) as usize * 2;
+    let mut bytes = Vec::with_capacity((text.len() * 3 / 4).min(max));
     let mut acc = 0u32;
     let mut bits = 0;
     for c in text.bytes().filter(|&c| c != b'=') {
+        if bytes.len() >= max {
+            break;
+        }
         let v = val[c as usize];
         if v == 0 {
             return None;
@@ -916,6 +945,50 @@ mod tests {
         other.unpack(&p);
         assert_eq!(other.get(id).map(|e| e.name.as_str()), Some("Kick me"));
         assert!(other.sound(id).is_some_and(|b| !b.data.is_empty()));
+    }
+
+    #[test]
+    fn a_hostile_project_is_cut_down_and_repaired() {
+        // Audio longer than any sound may be, and edits no knob can make
+        let long = pack_audio(&vec![0.5; (MAX_SECONDS * SAMPLE_SR) as usize * 3]);
+        assert_eq!(unpack_audio(&long).map(|x| x.len()), Some((MAX_SECONDS * SAMPLE_SR) as usize));
+        let edit = Edit {
+            gain: 99.0,
+            pitch: f32::NAN,
+            low_cut: f32::NAN,
+            fade_in: -3.0,
+            normalize: false,
+            ..Default::default()
+        };
+        let p = Packed {
+            entries: (1..=SAMPLE_SLOTS as u64 + 5)
+                .map(|id| Entry {
+                    id,
+                    source: 7,
+                    edit,
+                    ..Default::default()
+                })
+                .collect(),
+            sources: (0..SAMPLE_SLOTS as u64 + 5).map(|id| (id + 7, pack_audio(&hits()))).collect(),
+        };
+        let mut lib = Library::in_memory();
+        lib.unpack(&p);
+        assert_eq!(lib.sources.len(), SAMPLE_SLOTS);
+        assert_eq!(lib.entries.len(), SAMPLE_SLOTS);
+        let e = lib.get(1).unwrap().edit;
+        assert_eq!((e.gain, e.pitch, e.low_cut, e.fade_in), (24.0, 0.0, 20.0, 0.0));
+        let buf = lib.sound(1).unwrap();
+        assert!(buf.data.iter().all(|s| s.is_finite() && s.abs() <= 1.0));
+    }
+
+    #[test]
+    fn a_broken_edit_renders_silence_not_nan() {
+        let edit = Edit {
+            gain: f32::NAN,
+            normalize: false,
+            ..Default::default()
+        };
+        assert!(render(&hits(), &edit).iter().all(|s| *s == 0.0));
     }
 
     #[test]

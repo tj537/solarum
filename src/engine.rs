@@ -203,6 +203,8 @@ pub struct Shared {
     pub touches: AtomicBool,
     /// Where the library's audition is in its sound (`SAMPLE_SR` samples), `u64::MAX` when silent
     pub audition: AtomicU64,
+    /// Set when the output went NaN or infinite: the engine plays silence and the UI builds a new one
+    pub broken: AtomicBool,
 }
 
 /// `Shared::cycle_break` of a cycle without a breakdown
@@ -231,6 +233,7 @@ impl Shared {
             next_change: AtomicU64::new(u64::MAX),
             drive: AtomicU32::new(0),
             audition: AtomicU64::new(u64::MAX),
+            broken: AtomicBool::new(false),
         })
     }
 
@@ -2136,6 +2139,13 @@ impl Engine {
             let g = self.limiter * self.song.master;
             l *= g;
             r *= g;
+            // A NaN left in a filter or the reverb would keep everything silent (or loud noise
+            // on some devices): play silence and let the UI build a fresh engine
+            if !(l.is_finite() && r.is_finite()) {
+                l = 0.0;
+                r = 0.0;
+                self.shared.broken.store(true, Ordering::Relaxed);
+            }
 
             // Tape stop: read the recent output back slower and slower until it stands still. Let go
             // and it spins back up, landing on the live beat, then hands over to it.
@@ -2311,6 +2321,26 @@ mod tests {
             let n = ALLOCS.with(|c| c.replace(None)).unwrap();
             assert_eq!(n, 0, "{vibe:?}: {n} allocations on the audio thread");
         }
+    }
+
+    #[test]
+    fn a_nan_sound_plays_silence_and_asks_for_a_new_engine() {
+        use crate::sampler::{SampleBuf, CUSTOM};
+        let mut song = gen::generate(Vibe::Peak, &Default::default(), &mut Rng::new(2));
+        song.track_mut(Voice::Clap).sound = CUSTOM;
+        let mut slots: crate::sampler::Slots = Default::default();
+        slots[0] = Some(Arc::new(SampleBuf {
+            data: vec![f32::NAN; 4000],
+            pitch: 0.0,
+        }));
+        let shared = Shared::new();
+        let mut e = Engine::new(44_100.0, song, shared.clone(), None, 5);
+        e.handle(Cmd::Samples(Box::new(slots)));
+        e.handle(Cmd::Play);
+        let mut buf = vec![0.0; 2 * e.step_len() as usize * 16];
+        e.render(&mut buf);
+        assert!(buf.iter().all(|x| x.is_finite()));
+        assert!(shared.broken.load(Ordering::Relaxed));
     }
 
     #[test]

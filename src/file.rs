@@ -8,6 +8,10 @@ use serde::{Deserialize, Serialize};
 
 pub const EXTENSION: &str = "solarum";
 
+/// The largest file Solarum opens: a project with every slot a different sound of the
+/// longest length is about 115 MB of Base64
+const MAX_BYTES: u64 = 160 << 20;
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SolarumFile {
@@ -17,7 +21,7 @@ pub struct SolarumFile {
     /// The favorites 1–12 (the name "scenes" stays so older files open)
     pub scenes: Vec<Option<Song>>,
     pub names: Vec<String>,
-    /// Your own sounds in the eight slots (library ids, 0 = empty) and their audio
+    /// Your own sounds in the project's slots (library ids, 0 = empty) and their audio
     pub sample_slots: Vec<u64>,
     pub samples: crate::library::Packed,
 }
@@ -45,6 +49,7 @@ impl SolarumFile {
     pub fn from_text(text: &str) -> Result<Self, String> {
         let mut f: SolarumFile = ron::from_str(text).map_err(|e| format!("not a Solarum file ({e})"))?;
         f.song.sanitize();
+        f.sample_slots.truncate(crate::sampler::SAMPLE_SLOTS);
         f.scenes.resize(SLOTS, None);
         f.names.resize(SLOTS, String::new());
         for s in f.scenes.iter_mut().flatten() {
@@ -58,6 +63,10 @@ impl SolarumFile {
     }
 
     pub fn load(path: &std::path::Path) -> Result<Self, String> {
+        // Files get shared: refuse one too big to be a project before reading it all
+        if std::fs::metadata(path).map_err(|e| e.to_string())?.len() > MAX_BYTES {
+            return Err("too big for a Solarum file".into());
+        }
         let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
         Self::from_text(&text)
     }
@@ -94,5 +103,17 @@ mod tests {
         assert_eq!(old.scenes.len(), SLOTS);
         assert!(old.scenes[1].is_some() && old.scenes[4..].iter().all(|s| s.is_none()));
         assert_eq!(old.names.len(), SLOTS);
+    }
+
+    #[test]
+    fn refuses_a_file_too_big_to_be_a_project() {
+        let dir = std::env::temp_dir().join(format!("solarum-big-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("big.solarum");
+        // Sparse: the size is there without writing 160 MB
+        std::fs::File::create(&path).unwrap().set_len(MAX_BYTES + 1).unwrap();
+        let err = SolarumFile::load(&path).unwrap_err();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(err.contains("too big"), "{err}");
     }
 }
