@@ -21,7 +21,7 @@ ron = "0.8"
 symphonia = { version = "0.5", default-features = false, features = ["wav", "aiff", "mp3", "flac", "ogg", "vorbis", "pcm"] }
 
 [dev-dependencies]
-png = "0.17"
+png = "0.18"
 
 [build-dependencies]
 # App icon and version info in the Windows .exe
