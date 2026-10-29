@@ -258,6 +258,14 @@ pub struct SolarumApp {
     pub taste: crate::ear::Taste,
     /// The auto mode's last change, its track as it was before, and when it came – for the thumbs
     pub last_auto: Option<(gen::Change, crate::song::Track, f64)>,
+    /// Solari's manual (type help) is open next to SOLAR OS
+    pub help_open: bool,
+    /// chill (−1) … turnup (1), in thirds: how much pressure the auto mode puts on
+    pub drive: f32,
+    /// Where chill / turnup glide the tempo and (when the energy is yours) the energy, and
+    /// the value last set on the way – a hand on it ends the glide
+    glide_bpm: Option<(f32, f32)>,
+    glide_energy: Option<(f32, f32)>,
     /// FACE runs in a window of its own (for a projector), next to the main one
     face_window: bool,
     /// For screenshots: pretend to play at this position
@@ -468,6 +476,10 @@ impl SolarumApp {
             keep_tempo: false,
             taste: Default::default(),
             last_auto: None,
+            help_open: false,
+            drive: 0.0,
+            glide_bpm: None,
+            glide_energy: None,
             fake_live: None,
             library: Library::in_memory(),
             lib_ui: LibraryUi::default(),
@@ -1374,6 +1386,26 @@ impl SolarumApp {
                 self.say(text, now);
             }
         }
+        // chill / turnup: tempo and energy glide over a few bars, unless you take over
+        let glide = |value: &mut f32, g: &mut Option<(f32, f32)>, per_s: f32| {
+            let Some((goal, last)) = *g else { return };
+            if (*value - last).abs() > 1e-3 {
+                *g = None;
+                return;
+            }
+            let step = per_s * dt;
+            *value = if (goal - *value).abs() <= step {
+                goal
+            } else {
+                *value + step * (goal - *value).signum()
+            };
+            *g = (*value != goal).then_some((goal, *value));
+        };
+        glide(&mut self.song.bpm, &mut self.glide_bpm, 0.6);
+        glide(&mut self.song.macros.energy, &mut self.glide_energy, 0.03);
+        if self.glide_bpm.is_some() || self.glide_energy.is_some() {
+            ctx.request_repaint();
+        }
         while let Ok(m) = self.midi_rx.try_recv() {
             match m {
                 Midi::Macro(0, v) => self.set_energy(v, now),
@@ -1906,10 +1938,10 @@ impl SolarumApp {
                 .find(|v| !name.is_empty() && v.name().to_lowercase().starts_with(name))
         };
         match first {
-            "help" | "?" | "commands" => self.bunk(
-                "Here's what I know, bro: shuffle · seed tom · vibe acid · vibes · drop · like · nope · taste · forget · fx on/off · every 8 · mood dark · bpm 135 · status · joke · off",
-                now,
-            ),
+            "help" | "?" | "commands" | "manual" => {
+                self.help_open = true;
+                self.bunk("My manual's open, bro – click a command to run it.", now);
+            }
             "shuffle" | "roll" | "again" | "next" | "new" => {
                 let n = self.dice_all();
                 if n == 0 {
@@ -1944,6 +1976,10 @@ impl SolarumApp {
             "like" | "keep" | "yes" | "love" | "nice" => self.verdict(true, now),
             "nope" | "no" | "undo" | "dislike" | "meh" => self.verdict(false, now),
             "taste" => self.bunk(self.taste.summary(), now),
+            "chill" | "calm" | "easy" | "softer" | "less" | "relax" => self.push_drive(-1.0, now),
+            "turnup" | "harder" | "more" | "push" | "hype" | "louder" | "faster" => self.push_drive(1.0, now),
+            "turn" if arg == "up" => self.push_drive(1.0, now),
+            "turn" if arg == "down" => self.push_drive(-1.0, now),
             "forget" => {
                 self.taste = Default::default();
                 self.send(Cmd::Taste(self.taste));
@@ -2033,7 +2069,9 @@ impl SolarumApp {
                 ];
                 self.bunk(JOKES[pick(2, JOKES.len())], now);
             }
-            "hi" | "hello" | "hey" | "solari" | "bunk" | "who" => self.bunk("Yo bro! I'm Solari, I run the set down here. Type help if you're lost.", now),
+            "hi" | "hello" | "hey" | "solari" | "bunk" | "who" => {
+                self.bunk("Yo bro! I'm Solari, I run the set down here. Type help if you're lost.", now)
+            }
             "off" | "exit" | "bye" | "quit" | "shutdown" => {
                 self.bunk("Peace out, brother. Lights out.", now);
                 self.power(now);
@@ -2077,6 +2115,72 @@ impl SolarumApp {
         self.bunk(format!("Undone: {what}. Less of that – got it."), now);
     }
 
+    /// chill (−1) or turnup (1): a third more or less pressure. Not just the tempo – it glides
+    /// 3 BPM, the set runs hotter or cooler (the energy curve, shorter or longer cycles), the
+    /// director aims at a busier or airier groove, and when the energy bar is yours it glides too
+    fn push_drive(&mut self, dir: f32, now: f64) {
+        let level = ((self.drive * 3.0).round() + dir).clamp(-3.0, 3.0);
+        if level == (self.drive * 3.0).round() {
+            self.bunk(
+                if dir > 0.0 {
+                    "That's as hard as I go, fam. Any more and the speakers file a complaint."
+                } else {
+                    "Any chiller and we're asleep, bro."
+                },
+                now,
+            );
+            return;
+        }
+        let before = self.drive;
+        self.set_drive(level as i32);
+        self.say_drive(before, now);
+    }
+
+    /// The drive to `level` (−3 chill … 3 turned up): the engine hears it, the tempo glides
+    /// 3 BPM per level, and the energy when it's yours
+    fn set_drive(&mut self, level: i32) {
+        let from = (self.drive * 3.0).round() as i32;
+        let level = level.clamp(-3, 3);
+        if level == from {
+            return;
+        }
+        let dir = (level - from) as f32;
+        self.drive = level as f32 / 3.0;
+        self.send(Cmd::Drive(self.drive));
+        let bpm = self.glide_bpm.map_or(self.song.bpm, |g| g.0);
+        let goal = (bpm + 3.0 * dir).round().clamp(90.0, 180.0);
+        self.glide_bpm = Some((goal, self.song.bpm));
+        if !self.energy_locked() {
+            let e = self.glide_energy.map_or(self.song.macros.energy, |g| g.0);
+            // Chill never sinks into the break zone – that's what the energy bar is for
+            let to = (e + 0.12 * dir).clamp(0.35, 1.0);
+            self.glide_energy = Some((to, self.song.macros.energy));
+        }
+    }
+
+    /// What Solari says to a new drive (`before`: where it came from)
+    fn say_drive(&mut self, before: f32, now: f64) {
+        let level = (self.drive * 3.0).round() as i32;
+        let dir = self.drive - before;
+        if dir == 0.0 {
+            return;
+        }
+        let goal = self.glide_bpm.map_or(self.song.bpm, |g| g.0);
+        let words = match level {
+            3 => "Full send, fam. Maximum pressure.",
+            2 => "Turning it up – more drive, more hits. Feel that?",
+            1 if before < 0.0 => "Back to normal, bro. Middle of the road.",
+            1 => "A bit more push, bro.",
+            0 if dir > 0.0 => "Waking it back up, bro. Middle of the road.",
+            0 => "Taking the edge off, bro. Middle of the road.",
+            -1 if before > 0.0 => "Back to normal, bro. Middle of the road.",
+            -1 => "Easing off a little, bro.",
+            -2 => "Chill mode – less pressure, more air.",
+            _ => "Deep chill, brother. Floating.",
+        };
+        self.bunk(format!("{words} → {goal:.0} BPM"), now);
+    }
+
     /// AUTO FX on or off (the gear, or `fx` in the terminal)
     fn set_auto_fx(&mut self, on: bool, now: f64) {
         if self.song.auto_fx == on {
@@ -2107,6 +2211,7 @@ impl SolarumApp {
         } else {
             self.toggle_auto(now);
             self.last_auto = None;
+            self.help_open = false;
             if self.song.auto {
                 let hello = crate::log::HELLOS[(now as usize) % crate::log::HELLOS.len()];
                 self.bunk(hello, now);
@@ -2822,13 +2927,16 @@ impl SolarumApp {
         let (outer, _) = ui.allocate_exact_size(vec2(w, h_all), Sense::hover());
         widgets::bezel_frame(ui.painter(), outer, 13.0, 4.0);
         let screen = outer.shrink(6.0);
+        if on && self.help_open {
+            self.os_help(ui.ctx(), outer, now);
+        }
         let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(screen));
         let ui = &mut inner;
         let w = screen.width();
         if on {
             // The last move with its thumbs sits right above the prompt
             let card = self.song.auto && self.last_auto.is_some();
-            let (chrome, prompt) = (44.0, if card { 48.0 } else { 24.0 });
+            let (chrome, prompt) = (66.0, if card { 48.0 } else { 24.0 });
             let h = screen.height();
             let rect = self.log.ui(ui, self.log_state(), energy, h, chrome, prompt, now);
             switch |= self.os_chrome(ui, rect, now);
@@ -3008,6 +3116,11 @@ impl SolarumApp {
         if shuf.clicked() {
             self.command("shuffle", now);
         }
+        self.os_drive(
+            ui,
+            Rect::from_min_max(pos2(row.left(), row.bottom() + 6.0), pos2(row.right(), row.bottom() + 22.0)),
+            now,
+        );
         off.clicked()
     }
 
@@ -3058,6 +3171,186 @@ impl SolarumApp {
         }
     }
 
+    /// The drive slider under the menu: CHILL … TURN UP in seven steps, the middle normal.
+    /// Click or drag; Solari answers when you let go (`chill` and `turnup` do the same)
+    fn os_drive(&mut self, ui: &mut Ui, row: Rect, now: f64) {
+        let p = ui.painter().clone();
+        let mono = egui::FontId::monospace(9.5);
+        let left = p.text(row.left_center(), Align2::LEFT_CENTER, "CHILL", mono.clone(), alpha(ACID, 0.7));
+        let right = p.text(row.right_center(), Align2::RIGHT_CENTER, "TURN UP", mono, alpha(ACID, 0.7));
+        let track = Rect::from_min_max(pos2(left.right() + 8.0, row.top()), pos2(right.left() - 8.0, row.bottom()));
+        let resp = ui.interact(track, ui.id().with("os_drive"), Sense::click_and_drag());
+        let level = (self.drive * 3.0).round() as i32;
+        let id = ui.id().with("os_drive_from");
+        if resp.drag_started() || resp.is_pointer_button_down_on() && !ui.data(|d| d.get_temp::<f32>(id).is_some()) {
+            ui.data_mut(|d| d.insert_temp(id, self.drive));
+        }
+        if let Some(pos) = resp.interact_pointer_pos() {
+            let k = ((pos.x - track.left()) / track.width() * 7.0).floor().clamp(0.0, 6.0) as i32 - 3;
+            self.set_drive(k);
+        }
+        if resp.drag_stopped() || resp.clicked() {
+            let before = ui.data_mut(|d| d.remove_temp::<f32>(id)).unwrap_or(self.drive);
+            self.say_drive(before, now);
+        }
+        // Seven cells, growing from the middle out: cooler to the left, hotter to the right
+        let cw = track.width() / 7.0;
+        let hot = resp.hovered() || resp.dragged();
+        for i in 0..7i32 {
+            let k = i - 3;
+            let h = 5.0 + 2.0 * k.unsigned_abs() as f32;
+            let c = pos2(track.left() + (i as f32 + 0.5) * cw, track.center().y);
+            let cell = Rect::from_center_size(c, vec2(cw - 3.0, h));
+            let lit = if level >= 0 { k >= 0 && k <= level } else { k <= 0 && k >= level };
+            let a = if k == level {
+                1.0
+            } else if lit {
+                0.55
+            } else if hot {
+                0.2
+            } else {
+                0.12
+            };
+            p.rect_filled(cell, 1.0, alpha(ACID, a));
+        }
+        resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(
+            "How much pressure Solari puts on – not just the tempo: left is calmer, airier and a little slower, \
+             right is busier, hotter and a little faster (or type chill / turnup)",
+        );
+    }
+
+    /// Solari's manual (type help): every command by topic with what it does, in a window
+    /// next to SOLAR OS. A click runs a command – or, when it takes a word (vibe acid,
+    /// bpm 135 …), puts it into the prompt to finish. Esc, ✕ or a click outside close it.
+    fn os_help(&mut self, ctx: &egui::Context, os: Rect, now: f64) {
+        // (what you type, what it does, what a click does: run it or start it in the prompt)
+        enum Do {
+            Run(&'static str),
+            Type(&'static str),
+        }
+        type Row = (&'static str, &'static str, Do);
+        const TOPICS: [(&str, &[Row]); 5] = [
+            (
+                "GROOVE",
+                &[
+                    ("shuffle", "new patterns on every track that's on", Do::Run("shuffle")),
+                    ("acid", "a groove in another genre", Do::Type("vibe ")),
+                    ("vibes", "all ten genres", Do::Run("vibes")),
+                    ("seed tom", "a beat from a word: same word, same beat", Do::Type("seed ")),
+                ],
+            ),
+            (
+                "THE SET",
+                &[
+                    ("drop", "a build-up now, the drop on the bar after", Do::Run("drop")),
+                    ("fx on · off", "I play breakdowns and drops myself", Do::Run("fx")),
+                    ("turnup", "more pressure: busier, hotter, faster", Do::Run("turnup")),
+                    ("chill", "less pressure: airier, calmer, slower", Do::Run("chill")),
+                    ("every 8", "how often I change something: 1–16 bars", Do::Type("every ")),
+                ],
+            ),
+            (
+                "SOUND",
+                &[
+                    ("mood dark", "other chords and scale – or mood auto", Do::Type("mood ")),
+                    ("bpm 135", "the tempo", Do::Type("bpm ")),
+                ],
+            ),
+            (
+                "YOUR TASTE",
+                &[
+                    ("like", "keep my last move – I'll do more of that", Do::Run("like")),
+                    ("nope", "undo my last move – I'll do less of that", Do::Run("nope")),
+                    ("taste", "what I've learned about you", Do::Run("taste")),
+                    ("forget", "forget it all and start over", Do::Run("forget")),
+                ],
+            ),
+            (
+                "ME",
+                &[
+                    ("status", "what's playing right now", Do::Run("status")),
+                    ("joke", "you'll see", Do::Run("joke")),
+                    ("off", "switch me off", Do::Run("off")),
+                ],
+            ),
+        ];
+        let mono = egui::FontId::monospace;
+        let mut act: Option<&Do> = None;
+        let mut close = ctx.input(|i| i.key_pressed(Key::Escape));
+        let area = egui::Area::new(egui::Id::new("solari_help"))
+            .order(egui::Order::Foreground)
+            .fade_in(false)
+            .pivot(Align2::LEFT_BOTTOM)
+            .fixed_pos(pos2(os.right() + 10.0, os.bottom()))
+            .show(ctx, |ui| {
+                egui::Frame::new()
+                    .fill(Color32::from_rgb(13, 15, 11))
+                    .stroke(stroke(1.0, alpha(ACID, 0.45)))
+                    .shadow(ui.style().visuals.popup_shadow)
+                    .corner_radius(10.0)
+                    .inner_margin(egui::Margin::symmetric(14, 12))
+                    .show(ui, |ui| {
+                        ui.set_width(360.0);
+                        ui.spacing_mut().item_spacing.y = 0.0;
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("SOLARI · MANUAL").font(mono(12.0)).color(ACID));
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                let x =
+                                    ui.add(egui::Label::new(egui::RichText::new(ph::X).font(body(13.0)).color(DIM)).sense(Sense::click()));
+                                close |= x.on_hover_cursor(egui::CursorIcon::PointingHand).clicked();
+                            });
+                        });
+                        ui.add_space(2.0);
+                        ui.label(
+                            egui::RichText::new("Type it at SOLAR> or click it here")
+                                .font(body(11.0))
+                                .color(FAINT),
+                        );
+                        for (topic, rows) in TOPICS.iter() {
+                            ui.add_space(10.0);
+                            ui.label(egui::RichText::new(*topic).font(mono(10.0)).color(alpha(ACID, 0.55)));
+                            ui.add_space(3.0);
+                            for (cmd, what, how) in rows.iter() {
+                                let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::click());
+                                let hot = resp.hovered();
+                                let p = ui.painter();
+                                if hot {
+                                    p.rect_filled(r.expand2(vec2(6.0, 0.0)), 4.0, ACID.gamma_multiply(0.14));
+                                }
+                                p.text(r.left_center(), Align2::LEFT_CENTER, *cmd, mono(11.5), ACID);
+                                let text = fit_text(p, what, body(11.0), r.width() - 100.0);
+                                p.text(
+                                    r.left_center() + vec2(100.0, 0.0),
+                                    Align2::LEFT_CENTER,
+                                    text,
+                                    body(11.0),
+                                    if hot { TEXT } else { DIM },
+                                );
+                                if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                                    act = Some(how);
+                                }
+                            }
+                        }
+                    });
+            });
+        if area.response.clicked_elsewhere() {
+            close = true;
+        }
+        match act {
+            Some(Do::Run(c)) => self.command(c, now),
+            Some(Do::Type(c)) => {
+                self.cmd = c.to_string();
+                // Into the prompt, the cursor at the end, ready for the word
+                ctx.memory_mut(|m| m.request_focus(egui::Id::new("solari_prompt")));
+                close = true;
+            }
+            None => {}
+        }
+        if close {
+            self.help_open = false;
+        }
+    }
+
     /// SOLAR OS's prompt, at the bottom of the screen: type to Solari
     fn os_prompt(&mut self, ui: &mut Ui, rect: Rect, now: f64) {
         let mono = egui::FontId::monospace(11.0);
@@ -3080,6 +3373,7 @@ impl SolarumApp {
             cursor.off_duration = 0.7;
             let resp = ui.add(
                 egui::TextEdit::singleline(&mut self.cmd)
+                    .id(egui::Id::new("solari_prompt"))
                     .frame(false)
                     .font(mono)
                     .text_color(ACID)
@@ -3878,7 +4172,7 @@ impl SolarumApp {
                     row(ui, ph::MUSIC_NOTES, "5 · Mood & pitch", "MOOD (in the tempo box's menu at the top) picks the notes and chords of bass and synth – from Dark and Hypnotic to Euphoric, Sunny or Mysterious. On Auto every shuffle picks one that suits the vibe; a mood you pick stays. KEY (top right) moves the whole song to another key.");
                     row(ui, ph::LIGHTNING, "6 · Energy & drop", "The energy bar is the arrangement, not the volume (← →): under 30 a break with no kick and bass, then the tracks come in one by one, from 70 everything plays (a track the energy takes out is muted – the mute button shows it); by hand it starts full. DROP (B) builds up for two bars and drops.");
                     row(ui, ph::WAVEFORM, "7 · Effects & sound", "Hold STUTTER (Q), ECHO (W), WASH (E), CRUSH (X), GATE (C) or TAPE STOP (V) and combine them; The filter pad: left low-pass, right high-pass, up resonance – it springs back when you let go. Top right: the character pad (up DARK, right ACID), SPACE, PUMP, KEY (the song's key – the planets' notes stay steps of the scale) and DRIVE, and the EQ curve – drag its points. Double-click resets.");
-                    row(ui, ph::INFINITY, "8 · Auto mode", "The computer under the mood is the auto mode: its power button switches it on, Solari says hello and keeps the groove moving – something changes every 1 to 16 bars (SET in its title bar, where AUTO FX is too; OFF switches it off). Type to Solari: shuffle, vibe acid, drop, like, nope, taste, fx off, every 8, mood dark, bpm 135, status, joke, off. Every change is picked by ear from six tries, and the groove comes back to its theme before the drop. Thumb its last move up or down and it learns your taste; a track you edit stays yours for two phrases. With AUTO FX on it also steers the energy and plays breakdowns, build-ups and drops by itself – the map shows the cycle ahead. With AUTO FX off the energy bar is yours and no track is ever taken out.");
+                    row(ui, ph::INFINITY, "8 · Auto mode", "The computer under the mood is the auto mode: its power button switches it on, Solari says hello and keeps the groove moving – something changes every 1 to 16 bars (SET in its title bar, where AUTO FX is too; OFF switches it off). Type to Solari (help opens its manual): shuffle, vibe acid, drop, like, nope, taste, chill, turnup, fx off, every 8, mood dark, bpm 135, status, joke, off. Every change is picked by ear from six tries, and the groove comes back to its theme before the drop. The CHILL … TURN UP slider sets how much pressure it puts on. Thumb its last move up or down and it learns your taste; a track you edit stays yours for two phrases. With AUTO FX on it also steers the energy and plays breakdowns, build-ups and drops by itself – the map shows the cycle ahead. With AUTO FX off the energy bar is yours and no track is ever taken out.");
                     row(ui, ph::STACK, "9 · Favorites & auto song", "Click + under the space window to keep what you hear (twelve slots), click a full one to switch on the next bar, right-click to rename, save over or clear. AUTO SONG (the arrow next to the record button) makes a whole track from favorite 1 – a quiet intro, two or three drops, favorite 2 after the first – while you jam along. Click a part in the strip to jump there.");
                     row(ui, ph::RECORD, "10 · Record", "The red record button at the top (R) records everything you hear until you click it again – then save it as a WAV. An AUTO SONG records itself.");
                     row(ui, ph::SPARKLE, "11 · Visualizers", "Two fullscreen shows for a projector, with a small energy bar at the bottom: LIGHTS (P) – a spectrum ring, shockwaves and stars – and FACE (O) – a low-poly head that nods in time, glitches in a build-up, and on the drop screams with laser eyes, cracks and bursts apart. All keys keep working. Esc or a double-click goes back.");

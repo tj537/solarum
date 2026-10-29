@@ -71,9 +71,9 @@ pub fn hear(song: &Song) -> Hearing {
     }
 }
 
-/// How many hits a bar wants at this energy (without the kick)
-pub fn density_goal(energy: f32) -> f32 {
-    16.0 + 30.0 * energy.clamp(0.0, 1.0)
+/// How many hits a bar wants at this energy (without the kick), `push` −1…1 on top
+pub fn density_goal(energy: f32, push: f32) -> f32 {
+    16.0 + 30.0 * energy.clamp(0.0, 1.0) + 8.0 * push.clamp(-1.0, 1.0)
 }
 
 /// How far the groove should have wandered from its theme `progress` (0…1) into the groove
@@ -115,6 +115,8 @@ pub struct Aim {
     pub heat: f32,
     /// Tracks you just worked on – left alone for now
     pub hands_off: [bool; TRACKS],
+    /// More pressure (up to 1, `turnup`) or less (down to −1, `chill`): a busier or airier groove
+    pub push: f32,
 }
 
 /// Why the director picked a change – said in the log when it's the reason
@@ -235,7 +237,7 @@ pub fn choose(
         t.lock |= off;
     }
     let before = hear(&base);
-    let goal = density_goal(base.macros.energy);
+    let goal = density_goal(base.macros.energy, aim.push);
     let step_goal = if aim.big { 1.5 } else { 0.6 };
     let drift_to = drift_goal(aim.progress, aim.heat);
     let score = |c: &Song, change: Change, luck: f32| {
@@ -326,6 +328,7 @@ mod tests {
             progress,
             heat: 0.6,
             hands_off: [false; TRACKS],
+            push: 0.0,
         }
     }
 
@@ -355,7 +358,7 @@ mod tests {
         for i in 0..n {
             let vibe = Vibe::ALL[i % Vibe::ALL.len()];
             let s = gen::generate(vibe, &Macros::default(), &mut rng);
-            off += (hear(&s).density - density_goal(s.macros.energy)) / n as f32;
+            off += (hear(&s).density - density_goal(s.macros.energy, 0.0)) / n as f32;
         }
         assert!(off.abs() < 6.0, "generated grooves are {off:.1} hits off the goal");
     }

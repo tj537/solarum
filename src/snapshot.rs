@@ -179,6 +179,12 @@ mod tests {
             let v = crate::song::Voice::Bass;
             app.last_auto = Some((crate::gen::Change::NewNotes(v), *app.song.track(v), -10.0));
             app.log.push("New bass notes – room for the kick", -10.0);
+            app.drive = 1.0 / 3.0;
+        });
+        render("solari_manual", 1360.0, 860.0, |app| {
+            app.song.auto = true;
+            app.help_open = true;
+            app.fake_live = Some(playing(36.3, &[0, 3, 6]));
         });
         render("orbit_chain_update", 1360.0, 860.0, |app| {
             for (i, vibe) in [crate::song::Vibe::Dub, crate::song::Vibe::Rave, crate::song::Vibe::Melodic]

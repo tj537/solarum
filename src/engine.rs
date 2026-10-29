@@ -57,6 +57,8 @@ pub enum Cmd {
     Grow(Box<Song>),
     /// What you kept and undid in SOLAR OS – the auto mode's director listens to it
     Taste(crate::ear::Taste),
+    /// How much pressure the auto mode puts on: −1 (chill) … 1 (turned up)
+    Drive(f32),
 }
 
 pub enum Event {
@@ -477,6 +479,8 @@ pub struct Engine {
     home: [crate::song::Track; TRACKS],
     /// What you like (from SOLAR OS)
     taste: crate::ear::Taste,
+    /// chill (−1) … turnup (1): lifts or lowers the set's heat and how busy the groove gets
+    drive: f32,
     /// Tracks you just edited by hand stay yours until this bar
     hands_off: [u64; TRACKS],
     /// Why the director picked the change that goes out next
@@ -631,6 +635,7 @@ impl Engine {
             recent: Default::default(),
             home: song.tracks,
             taste: Default::default(),
+            drive: 0.0,
             hands_off: [0; TRACKS],
             why: None,
             fill: None,
@@ -809,6 +814,11 @@ impl Engine {
                 }
             }
             Cmd::Taste(t) => self.taste = t,
+            Cmd::Drive(d) => {
+                self.drive = d.clamp(-1.0, 1.0);
+                // The curve and the map follow at once; the energy glides there
+                self.publish_cycle();
+            }
             Cmd::Play => {
                 if !self.playing {
                     self.playing = true;
@@ -1382,7 +1392,12 @@ impl Engine {
     /// towards the breakdown, falls to the plan's depth and creeps up through it, then
     /// climbs through the build-up. The heat of the cycle sets how high it all goes.
     fn curve_target(&self, b: u64) -> f32 {
-        curve(b, self.cycle_len, self.breakdown_at(), self.plan.depth, self.heat)
+        curve(b, self.cycle_len, self.breakdown_at(), self.plan.depth, self.heat_now())
+    }
+
+    /// The set's heat with your drive on top (chill cools it, turnup heats it)
+    fn heat_now(&self) -> f32 {
+        (self.heat + 0.3 * self.drive).clamp(0.0, 1.0)
     }
 
     /// Bar of the auto cycle where the breakdown starts – as far before its end as the plan says
@@ -1408,13 +1423,14 @@ impl Engine {
         } else {
             (self.heat + 0.15 + 0.2 * r.f32()).min(1.0)
         };
+        let hot = (self.heat + 0.3 * self.drive).clamp(0.0, 1.0);
         let last = self.plan;
-        let options = plans_for(self.heat);
+        let options = plans_for(hot);
         let n = options.iter().filter(|&&i| PLANS[i] != last).count() as u32;
         let i = options.iter().copied().filter(|&i| PLANS[i] != last).nth(r.below(n) as usize);
         self.plan = PLANS[i.unwrap_or(0)];
         let calm = matches!(self.song.vibe.rules(), Vibe::Hypnotic | Vibe::Minimal | Vibe::Dub | Vibe::Melodic);
-        let lens: &[u64] = match (calm, self.heat) {
+        let lens: &[u64] = match (calm, hot) {
             (_, h) if h >= 0.9 => &[32],
             (true, h) if h < 0.5 => &[48, 64],
             (true, _) => &[32, 48, 64, 48],
@@ -1436,7 +1452,7 @@ impl Engine {
             NO_BREAK
         };
         sh.cycle_break.store(brk, Ordering::Relaxed);
-        sh.heat.store((self.heat * 1000.0) as u32, Ordering::Relaxed);
+        sh.heat.store((self.heat_now() * 1000.0) as u32, Ordering::Relaxed);
         sh.cycle_depth.store((self.plan.depth * 1000.0) as u32, Ordering::Relaxed);
     }
 
@@ -1447,8 +1463,9 @@ impl Engine {
             big,
             mutes: self.song.auto_fx,
             progress,
-            heat: self.heat,
+            heat: self.heat_now(),
             hands_off: self.hands_off.map(|until| until > self.bar_now),
+            push: self.drive,
         };
         let (change, why) = crate::ear::choose(&mut self.song, &mut self.auto_rng, &aim, &mut self.recent, &self.home, &self.taste)?;
         self.why = why;
@@ -2696,6 +2713,19 @@ mod tests {
         assert!(changes.iter().all(|c| c.voice() != Some(Voice::Bass)), "{changes:?}");
         // What you made is the theme now: the auto mode comes back to it, not to the old line
         assert_eq!(e.home[Voice::Bass.index()].steps, mine.track(Voice::Bass).steps);
+    }
+
+    #[test]
+    fn turnup_heats_the_set_and_chill_cools_it() {
+        let sh = Shared::new();
+        let song = gen::generate(Vibe::Peak, &Default::default(), &mut Rng::new(2));
+        let mut e = Engine::new(11_025.0, song, sh.clone(), None, 1);
+        e.handle(Cmd::Play);
+        let (heat, mid) = (sh.heat.load(Ordering::Relaxed), e.curve_target(12));
+        e.handle(Cmd::Drive(1.0));
+        assert!(sh.heat.load(Ordering::Relaxed) > heat && e.curve_target(12) > mid);
+        e.handle(Cmd::Drive(-1.0));
+        assert!(sh.heat.load(Ordering::Relaxed) < heat && e.curve_target(12) < mid);
     }
 
     #[test]
