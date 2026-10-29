@@ -356,3 +356,16 @@ fn solo_and_back() {
     app.toggle_solo(5, 0.0);
     assert_eq!(app.song.tracks.map(|t| t.mute), before);
 }
+
+#[test]
+fn the_energy_notch_sits_under_the_pointer() {
+    use super::solar_os::drive_at;
+    let track = Rect::from_min_max(pos2(100.0, 0.0), pos2(300.0, 16.0));
+    // The notch is drawn at middle + drive × half the width: the mapping is its inverse
+    for drive in [-1.0, -0.5, 0.3, 1.0] {
+        let x = track.center().x + drive * track.width() * 0.5;
+        assert!((drive_at(x, track) - drive).abs() < 1e-5, "{drive}");
+    }
+    assert_eq!(drive_at(203.0, track), 0.0, "snaps to the middle");
+    assert_eq!((drive_at(0.0, track), drive_at(999.0, track)), (-1.0, 1.0), "past the ends");
+}

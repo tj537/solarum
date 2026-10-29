@@ -693,24 +693,28 @@ impl SolarumApp {
             ACID,
         );
         let track = Rect::from_min_max(pos2(row.left() + 50.0, row.top()), pos2(num.left() - 8.0, row.bottom()));
-        let resp = ui.interact(track, ui.id().with("os_energy"), Sense::click_and_drag());
+        // A few pixels more to grab than to see: the row is thin
+        let resp = ui.interact(track.expand2(vec2(0.0, 4.0)), ui.id().with("os_energy"), Sense::click_and_drag());
         let steer = self.energy_locked();
         let song = self.song_form.is_some();
         let v_at = |x: f32| ((x - track.left()) / track.width()).clamp(0.0, 1.0);
         if let Some(pos) = resp.interact_pointer_pos().filter(|_| !song) {
             if steer {
-                // Pull the energy towards the pointer: from where it was when you grabbed it
+                // The notch is the handle and sits right under the pointer, like any slider: the
+                // middle is no lift, the ends are full CHILL and TURN UP. It snaps to the middle
+                // so the way back to neutral is easy. (The cells keep showing the energy playing.)
                 let id = ui.id().with("os_energy_grab");
-                if resp.drag_started() || resp.clicked() || !ui.data(|d| d.get_temp::<(f32, f32, f32)>(id).is_some()) {
-                    ui.data_mut(|d| d.insert_temp(id, (energy, self.drive, self.drive)));
-                }
-                let (e0, d0, _) = ui
-                    .data(|d| d.get_temp::<(f32, f32, f32)>(id))
-                    .unwrap_or((energy, self.drive, self.drive));
-                self.set_drive(d0 + (v_at(pos.x) - e0) * 2.5);
+                let before = match ui.data(|d| d.get_temp::<f32>(id)) {
+                    Some(b) => b,
+                    None => {
+                        ui.data_mut(|d| d.insert_temp(id, self.drive));
+                        self.drive
+                    }
+                };
+                self.set_drive(drive_at(pos.x, track));
                 if resp.drag_stopped() || resp.clicked() {
-                    ui.data_mut(|d| d.remove_temp::<(f32, f32, f32)>(id));
-                    self.say_drive(d0, now);
+                    ui.data_mut(|d| d.remove_temp::<f32>(id));
+                    self.say_drive(before, now);
                 }
             } else {
                 self.glide_energy = None;
@@ -744,8 +748,10 @@ impl SolarumApp {
             let mid = track.center().x;
             p.line_segment([pos2(mid, y - 2.0), pos2(mid, y + 1.0)], stroke(1.0, alpha(ACID, 0.35)));
             let at = pos2(mid + self.drive * track.width() * 0.5, y);
+            // Bigger while you're on it, so you see what you're holding
+            let s = if hot { 1.6 } else { 1.0 };
             p.add(egui::Shape::convex_polygon(
-                vec![at + vec2(-3.0, 2.0), at + vec2(3.0, 2.0), at + vec2(0.0, -2.5)],
+                vec![at + vec2(-3.0, 2.0) * s, at + vec2(3.0, 2.0) * s, at + vec2(0.0, -2.5) * s],
                 ACID,
                 egui::Stroke::NONE,
             ));
@@ -753,9 +759,9 @@ impl SolarumApp {
         let tip = if song {
             "The song steers the energy"
         } else if steer {
-            "Energy: Solari steers it through the cycle. Drag to lift or lower the whole set – right is hotter, \
-             busier and a touch faster, left calmer, airier and a touch slower (or type turnup / chill). \
-             The notch shows how far you've moved it."
+            "Energy: Solari steers it through the cycle. The notch lifts or lowers the whole set – drag it \
+             right for hotter, busier and a touch faster, left for calmer, airier and a touch slower, the \
+             middle for neither (or type turnup / chill)."
         } else {
             "Energy: what plays – low is a break, from 85 up everything plays (or type turnup / chill)"
         };
@@ -932,5 +938,16 @@ impl SolarumApp {
         if let Some(line) = sent {
             self.command(&line, now);
         }
+    }
+}
+
+/// The drive the ENERGY slider's notch stands for at `x`: −1 at the left end, 0 in the middle
+/// (with a few pixels' snap, so neutral is easy to find again), 1 at the right end
+pub(super) fn drive_at(x: f32, track: Rect) -> f32 {
+    let dx = x - track.center().x;
+    if dx.abs() < 5.0 {
+        0.0
+    } else {
+        (dx / (track.width() * 0.5)).clamp(-1.0, 1.0)
     }
 }
