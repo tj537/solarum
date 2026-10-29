@@ -41,13 +41,23 @@ pub struct Where {
     /// Bar of the breakdown in the cycle (None: a roller without one)
     pub brk: Option<u64>,
     pub heat: f32,
+    /// How low the breakdown goes
+    pub depth: f32,
+    /// A change every this many bars (SET)
+    pub every: u64,
+    /// Bars until the next change lands (None: none planned before the drop)
+    pub next: Option<u64>,
 }
 
 impl Where {
-    pub fn read(shared: &Shared, bar_now: u64) -> Self {
+    pub fn read(shared: &Shared, bar_now: u64, every: u8) -> Self {
         let start = shared.cycle_start.load(Ordering::Relaxed);
         let brk = shared.cycle_break.load(Ordering::Relaxed);
+        let next = shared.next_change.load(Ordering::Relaxed);
         Where {
+            depth: shared.cycle_depth.load(Ordering::Relaxed) as f32 / 1000.0,
+            every: every.max(1) as u64,
+            next: (next != u64::MAX && next >= bar_now).then(|| next - bar_now),
             bar: bar_now.saturating_sub(start),
             len: shared.cycle_len.load(Ordering::Relaxed).max(1) as u64,
             brk: (brk != NO_BREAK).then_some(brk as u64),
@@ -70,6 +80,11 @@ impl Where {
         } else {
             "GROOVE"
         }
+    }
+
+    /// The bar the breakdown (or, for a roller, the build-up) starts
+    fn groove_end(&self) -> u64 {
+        self.brk.unwrap_or(self.len.saturating_sub(2))
     }
 
     fn heat_word(&self) -> &'static str {
@@ -306,19 +321,30 @@ impl Log {
         let status = match state {
             State::Stopped => "STOPPED".to_string(),
             State::Song => "SONG".to_string(),
-            State::Auto(w) => {
-                let drop = match w.bars_to_drop() {
-                    0 | 1 => "DROP NOW".to_string(),
-                    n => format!("DROP IN {n}"),
-                };
-                format!("{} · {}/{} · {drop}", w.phase(), w.bar + 1, w.len)
-            }
+            State::Auto(w) => format!("{} · {}", w.phase(), w.heat_word().to_uppercase()),
             State::Bar(b) => format!("BAR {} · PHRASE {}", b + 1, b / 8 + 1),
         };
         p.text(inner.left_top(), Align2::LEFT_TOP, &status, mono(11.0), ACID);
         let mut top = inner.top() + 18.0;
-        // The energy the auto mode steers: a row of cells, like an old level meter
-        if let Some(e) = energy {
+        if let State::Auto(w) = state {
+            let drop = match w.bars_to_drop() {
+                0 | 1 => "DROP NOW".to_string(),
+                n => format!("DROP IN {n}"),
+            };
+            p.text(inner.right_top(), Align2::RIGHT_TOP, drop, mono(11.0), ACID);
+            let map = Rect::from_min_size(pos2(inner.left(), top), vec2(inner.width(), 24.0));
+            set_map(&p, map, w, energy.unwrap_or(0.0), now);
+            top += 34.0;
+            let next = match w.next {
+                Some(n) => format!("CHANGE IN {}", n.max(1)),
+                None => String::new(),
+            };
+            let e = energy.map_or(String::new(), |e| format!("ENERGY {:.0}", e * 100.0));
+            p.text(pos2(inner.left(), top), Align2::LEFT_TOP, e, mono(10.0), alpha(ACID, 0.7));
+            p.text(pos2(inner.right(), top), Align2::RIGHT_TOP, next, mono(10.0), alpha(ACID, 0.7));
+            top += 14.0;
+        } else if let Some(e) = energy {
+            // The energy the auto mode steers: a row of cells, like an old level meter
             p.text(pos2(inner.left(), top), Align2::LEFT_TOP, "ENERGY", mono(10.0), alpha(ACID, 0.7));
             p.text(
                 pos2(inner.right(), top),
@@ -399,6 +425,78 @@ impl Log {
             bottom -= gh + 4.0;
         }
         rect
+    }
+}
+
+/// The map of the cycle: the energy the auto mode plans for every bar as a row of lit columns
+/// (played ones bright, the rest dim), the breakdown and build-up shaded, the drop at the
+/// end, dots where the changes land and the bar playing now
+fn set_map(p: &egui::Painter, r: Rect, w: Where, energy: f32, now: f64) {
+    let n = w.len.max(1);
+    let x = |b: f32| r.left() + r.width() * b / n as f32;
+    let groove = w.groove_end();
+    // The parts: groove bare, breakdown shaded, build-up brighter
+    let band = |from: u64, to: u64, a: f32| {
+        let rr = Rect::from_min_max(pos2(x(from as f32), r.top()), pos2(x(to as f32), r.bottom()));
+        p.rect_filled(rr, 2.0, alpha(ACID, a));
+    };
+    if let Some(b) = w.brk {
+        band(b, n.saturating_sub(2), 0.035);
+    }
+    band(n.saturating_sub(2), n, 0.07);
+    // Phrases
+    for k in (8..n).step_by(8) {
+        p.line_segment(
+            [pos2(x(k as f32), r.top()), pos2(x(k as f32), r.bottom())],
+            stroke(1.0, alpha(ACID, 0.1)),
+        );
+    }
+    // The planned energy, one column per few pixels
+    let cols = ((r.width() / 3.0) as usize).max(8);
+    let cw = r.width() / cols as f32;
+    let at = w.brk.unwrap_or(n.saturating_sub(2));
+    for i in 0..cols {
+        let b = ((i as f32 + 0.5) / cols as f32 * n as f32) as u64;
+        let e = crate::engine::curve(b, n, at, w.depth, w.heat).clamp(0.05, 1.0);
+        let h = (r.height() - 2.0) * e;
+        let col = Rect::from_min_max(
+            pos2(r.left() + i as f32 * cw + 0.5, r.bottom() - h),
+            pos2(r.left() + (i + 1) as f32 * cw - 0.5, r.bottom()),
+        );
+        let a = if b < w.bar {
+            0.75
+        } else if b == w.bar {
+            1.0
+        } else {
+            0.22
+        };
+        p.rect_filled(col, 0.5, alpha(ACID, a));
+    }
+    // Now: a bright line and where the energy really is
+    let px = x(w.bar as f32 + 0.5);
+    p.line_segment([pos2(px, r.top() - 2.0), pos2(px, r.bottom() + 1.0)], stroke(1.5, ACID));
+    let dot = pos2(px, r.bottom() - (r.height() - 2.0) * energy.clamp(0.0, 1.0));
+    glow(p, dot, 3.0, ACID, 0.4 + 0.2 * (now * 3.0).sin().abs() as f32);
+    p.circle_filled(dot, 2.2, Color32::WHITE);
+    // The drop at the end
+    let tip = pos2(r.right() - 3.5, r.top() - 1.0);
+    p.add(egui::Shape::convex_polygon(
+        vec![tip + vec2(-3.5, -5.0), tip + vec2(3.5, -5.0), tip],
+        ACID,
+        egui::Stroke::NONE,
+    ));
+    // Where the changes land: small dots under the map, the next one big
+    let y = r.bottom() + 5.0;
+    let next = w.next.map(|k| w.bar + k);
+    let mut b = 0;
+    while b < groove {
+        let c = pos2(x(b as f32 + 0.5), y);
+        if Some(b) == next {
+            p.circle_filled(c, 2.2, ACID);
+        } else {
+            p.circle_filled(c, 1.0, alpha(ACID, if b <= w.bar { 0.25 } else { 0.5 }));
+        }
+        b += w.every;
     }
 }
 
@@ -497,6 +595,9 @@ mod tests {
             len: 32,
             brk,
             heat: 0.6,
+            depth: 0.2,
+            every: 4,
+            next: None,
         })
     }
 

@@ -166,6 +166,19 @@ mod tests {
             ));
             app.slot_now = Some(0);
             app.fake_live = Some(playing(36.3, &[0, 3, 6]));
+            // SOLAR OS mid-cycle: the map, the next change, the last move with its thumbs
+            use std::sync::atomic::Ordering::Relaxed;
+            app.song.auto_fx = true;
+            let sh = &app.shared;
+            sh.step.store(13 * 16 + 5, Relaxed);
+            sh.cycle_len.store(32, Relaxed);
+            sh.cycle_break.store(24, Relaxed);
+            sh.heat.store(650, Relaxed);
+            sh.cycle_depth.store(200, Relaxed);
+            sh.next_change.store(16, Relaxed);
+            let v = crate::song::Voice::Bass;
+            app.last_auto = Some((crate::gen::Change::NewNotes(v), *app.song.track(v), -10.0));
+            app.log.push("New bass notes – room for the kick", -10.0);
         });
         render("orbit_chain_update", 1360.0, 860.0, |app| {
             for (i, vibe) in [crate::song::Vibe::Dub, crate::song::Vibe::Rave, crate::song::Vibe::Melodic]

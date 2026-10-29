@@ -652,6 +652,8 @@ pub enum Change {
     NewSound(Voice, u8),
     NewNotes(Voice),
     Length(Voice, u8),
+    /// A track that wandered goes back to how it was when the cycle began (the theme returns)
+    Reprise(Voice),
     Breakdown,
     Build,
     Drop,
@@ -675,9 +677,25 @@ impl Change {
             | Change::Shifted(v)
             | Change::NewSound(v, _)
             | Change::NewNotes(v)
-            | Change::Length(v, _) => Some(v),
+            | Change::Length(v, _)
+            | Change::Reprise(v) => Some(v),
             _ => None,
         }
+    }
+
+    /// What kind of change it was (`crate::ear::KINDS`), for the taste Solari learns
+    pub fn kind(self) -> Option<usize> {
+        Some(match self {
+            Change::NewPattern(_) => 0,
+            Change::NewNotes(_) => 1,
+            Change::NewSound(..) => 2,
+            Change::Shifted(_) => 3,
+            Change::Length(..) => 4,
+            Change::Muted(_) => 5,
+            Change::Unmuted(_) => 6,
+            Change::Reprise(_) => 7,
+            _ => return None,
+        })
     }
 
     pub fn describe(self) -> String {
@@ -689,6 +707,7 @@ impl Change {
             Change::NewSound(v, s) => format!("{} sound: {}", v.name(), v.sounds()[s as usize % v.sounds().len()]),
             Change::NewNotes(v) => format!("New {} notes", v.name().to_lowercase()),
             Change::Length(v, n) => format!("{} loops every {n} steps", v.name()),
+            Change::Reprise(v) => format!("{} back to the theme", v.name()),
             Change::Breakdown => "Breakdown".into(),
             Change::Build => "Build-up".into(),
             Change::Drop => "Drop!".into(),
@@ -714,13 +733,13 @@ pub struct Recent {
 }
 
 impl Recent {
-    fn note(&mut self, c: Change) {
+    pub(crate) fn note(&mut self, c: Change) {
         if let Some(v) = c.voice() {
             self.voices = [Some(v), self.voices[0]];
         }
     }
 
-    fn fresh(&self, v: Voice) -> bool {
+    pub(crate) fn fresh(&self, v: Voice) -> bool {
         !self.voices.contains(&Some(v))
     }
 }

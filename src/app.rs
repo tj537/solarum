@@ -254,6 +254,10 @@ pub struct SolarumApp {
     pub power_at: f64,
     pub on_start: OnStart,
     pub keep_tempo: bool,
+    /// What Solari learned you like (the thumbs in SOLAR OS) – saved with the settings
+    pub taste: crate::ear::Taste,
+    /// The auto mode's last change, its track as it was before, and when it came – for the thumbs
+    pub last_auto: Option<(gen::Change, crate::song::Track, f64)>,
     /// FACE runs in a window of its own (for a projector), next to the main one
     face_window: bool,
     /// For screenshots: pretend to play at this position
@@ -343,6 +347,8 @@ impl SolarumApp {
         let get = |key: &str| cc.storage.and_then(|s| eframe::get_value::<bool>(s, key));
         app.log.facts = get("log_facts").unwrap_or(true);
         app.keep_tempo = get("keep_tempo").unwrap_or(false);
+        app.taste = cc.storage.and_then(|s| eframe::get_value(s, "taste")).unwrap_or_default();
+        app.send(Cmd::Taste(app.taste));
         app.shared.touches.store(get("touches").unwrap_or(true), Ordering::Relaxed);
         app.on_start = cc.storage.and_then(|s| eframe::get_value(s, "on_start")).unwrap_or(OnStart::Wait);
         // Straight into the music, if the settings say so
@@ -460,6 +466,8 @@ impl SolarumApp {
             space_rect: Rect::from_min_size(pos2(280.0, 70.0), vec2(800.0, 600.0)),
             on_start: OnStart::Wait,
             keep_tempo: false,
+            taste: Default::default(),
+            last_auto: None,
             fake_live: None,
             library: Library::in_memory(),
             lib_ui: LibraryUi::default(),
@@ -904,7 +912,7 @@ impl SolarumApp {
         if self.song_form.is_some() {
             State::Song
         } else if self.song.auto && self.song.auto_fx {
-            State::Auto(Where::read(&self.shared, bar))
+            State::Auto(Where::read(&self.shared, bar, self.song.auto_bars))
         } else {
             State::Bar(bar)
         }
@@ -1305,8 +1313,8 @@ impl SolarumApp {
 
     fn sync(&mut self, ctx: &egui::Context, now: f64, dt: f32) -> Live {
         while let Ok(ev) = self.events.try_recv() {
-            let (song, change, ack) = match ev {
-                Event::Song(song, change, ack) => (song, change, ack),
+            let (song, change, ack, why) = match ev {
+                Event::Song(song, change, ack, why) => (song, change, ack, why),
                 Event::Audio(piece) => {
                     if self.rec_live {
                         self.recording.extend(piece.iter().map(|&s| crate::wav::to_i16(s)));
@@ -1326,6 +1334,7 @@ impl SolarumApp {
                     continue;
                 }
             };
+            let before = self.song;
             // A song the engine sent before it had our last edit would undo that edit
             if ack >= self.songs_sent {
                 self.song = *song;
@@ -1353,8 +1362,13 @@ impl SolarumApp {
                     gen::Change::Drop | gen::Change::NewChapter => self.log.note_drop(),
                     _ => {}
                 }
-                let text = match c {
-                    gen::Change::Scene(i) => format!("{} · {}", i + 1, self.fav_name(i)),
+                // The auto mode's own moves get a thumb up or down in SOLAR OS
+                if let (true, true, Some(v)) = (self.song.auto, c.kind().is_some(), c.voice()) {
+                    self.last_auto = Some((c, *before.track(v), now));
+                }
+                let text = match (c, why) {
+                    (gen::Change::Scene(i), _) => format!("{} · {}", i + 1, self.fav_name(i)),
+                    (_, Some(w)) => format!("{} – {}", c.describe(), w.describe()),
                     _ => c.describe(),
                 };
                 self.say(text, now);
@@ -1893,7 +1907,7 @@ impl SolarumApp {
         };
         match first {
             "help" | "?" | "commands" => self.bunk(
-                "Here's what I know, bro: shuffle · seed tom · vibe acid · vibes · drop · fx on/off · every 8 · mood dark · bpm 135 · status · joke · off",
+                "Here's what I know, bro: shuffle · seed tom · vibe acid · vibes · drop · like · nope · taste · forget · fx on/off · every 8 · mood dark · bpm 135 · status · joke · off",
                 now,
             ),
             "shuffle" | "roll" | "again" | "next" | "new" => {
@@ -1926,6 +1940,14 @@ impl SolarumApp {
                     ),
                     now,
                 );
+            }
+            "like" | "keep" | "yes" | "love" | "nice" => self.verdict(true, now),
+            "nope" | "no" | "undo" | "dislike" | "meh" => self.verdict(false, now),
+            "taste" => self.bunk(self.taste.summary(), now),
+            "forget" => {
+                self.taste = Default::default();
+                self.send(Cmd::Taste(self.taste));
+                self.bunk("Clean slate, bro. Show me what you like.", now);
             }
             "vibes" | "list" => {
                 let names: Vec<&str> = Vibe::ALL.iter().map(|v| v.name()).collect();
@@ -2027,6 +2049,34 @@ impl SolarumApp {
         }
     }
 
+    /// A thumb for the auto mode's last move: up keeps it and Solari does more of that kind
+    /// on that track; down puts the track back as it was (the engine then leaves it alone
+    /// for two phrases) and Solari does less of it
+    fn verdict(&mut self, liked: bool, now: f64) {
+        let Some((c, before, _)) = self.last_auto.take() else {
+            self.bunk("Nothing to rate yet, bro – wait for my next move.", now);
+            return;
+        };
+        self.taste.learn(c, liked);
+        self.send(Cmd::Taste(self.taste));
+        let what = c.describe().to_lowercase();
+        if liked {
+            self.bunk(format!("Noted: {what}. More of that, bro."), now);
+            return;
+        }
+        if let Some(v) = c.voice() {
+            let mute_move = matches!(c, gen::Change::Muted(_) | gen::Change::Unmuted(_));
+            let t = self.song.track_mut(v);
+            *t = crate::song::Track {
+                volume: t.volume,
+                lock: t.lock,
+                mute: if mute_move { before.mute } else { t.mute },
+                ..before
+            };
+        }
+        self.bunk(format!("Undone: {what}. Less of that – got it."), now);
+    }
+
     /// AUTO FX on or off (the gear, or `fx` in the terminal)
     fn set_auto_fx(&mut self, on: bool, now: f64) {
         if self.song.auto_fx == on {
@@ -2056,6 +2106,7 @@ impl SolarumApp {
             self.stop_song(now);
         } else {
             self.toggle_auto(now);
+            self.last_auto = None;
             if self.song.auto {
                 let hello = crate::log::HELLOS[(now as usize) % crate::log::HELLOS.len()];
                 self.bunk(hello, now);
@@ -2775,10 +2826,15 @@ impl SolarumApp {
         let ui = &mut inner;
         let w = screen.width();
         if on {
-            let (chrome, prompt) = (44.0, 24.0);
+            // The last move with its thumbs sits right above the prompt
+            let card = self.song.auto && self.last_auto.is_some();
+            let (chrome, prompt) = (44.0, if card { 48.0 } else { 24.0 });
             let h = screen.height();
             let rect = self.log.ui(ui, self.log_state(), energy, h, chrome, prompt, now);
             switch |= self.os_chrome(ui, rect, now);
+            if card {
+                self.os_card(ui, rect, now);
+            }
             self.os_prompt(ui, rect, now);
             // Logged in: Solari, the mascot, waves and says hello, then the log takes over
             let since = (now - self.power_at) as f32;
@@ -2953,6 +3009,53 @@ impl SolarumApp {
             self.command("shuffle", now);
         }
         off.clicked()
+    }
+
+    /// The auto mode's last move, above the prompt: what it changed, and a thumb up (keep it,
+    /// more of that) or down (undo it, less of that) – Solari learns your taste from them
+    fn os_card(&mut self, ui: &mut Ui, rect: Rect, now: f64) {
+        let Some((c, _, at)) = self.last_auto else { return };
+        let row = Rect::from_min_max(
+            pos2(rect.left() + 8.0, rect.bottom() - 48.0),
+            pos2(rect.right() - 8.0, rect.bottom() - 28.0),
+        );
+        let p = ui.painter().clone();
+        // It lights up when it comes, then settles
+        let fresh = (1.0 - (now - at) as f32 / 1.5).clamp(0.0, 1.0);
+        p.rect_filled(row, 4.0, ACID.gamma_multiply(0.08 + 0.12 * fresh));
+        let key_w = 24.0;
+        let down_r = Rect::from_min_size(pos2(row.right() - key_w, row.top()), vec2(key_w, row.height()));
+        let up_r = down_r.translate(vec2(-key_w - 2.0, 0.0));
+        let text_w = up_r.left() - row.left() - 10.0;
+        let label = fit_text(&p, &c.describe().to_uppercase(), egui::FontId::monospace(10.0), text_w);
+        p.text(
+            pos2(row.left() + 6.0, row.center().y),
+            Align2::LEFT_CENTER,
+            label,
+            egui::FontId::monospace(10.0),
+            ACID,
+        );
+        let thumb = |r: Rect, id: &str, icon: &str, tip: &str| {
+            let resp = ui.interact(r, ui.id().with(id), Sense::click());
+            let hot = resp.hovered();
+            if hot {
+                p.rect_filled(r.shrink(1.0), 3.0, ACID.gamma_multiply(0.3));
+            }
+            p.text(r.center(), Align2::CENTER_CENTER, icon, body(13.0), if hot { TEXT } else { ACID });
+            resp.on_hover_text(tip).on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
+        };
+        let up = thumb(up_r, "os_like", ph::THUMBS_UP, "Keep it – Solari does more of that (or type like)");
+        let down = thumb(
+            down_r,
+            "os_nope",
+            ph::THUMBS_DOWN,
+            "Undo it – the track goes back and Solari does less of that (or type nope)",
+        );
+        if up {
+            self.verdict(true, now);
+        } else if down {
+            self.verdict(false, now);
+        }
     }
 
     /// SOLAR OS's prompt, at the bottom of the screen: type to Solari
@@ -3775,7 +3878,7 @@ impl SolarumApp {
                     row(ui, ph::MUSIC_NOTES, "5 · Mood & pitch", "MOOD (in the tempo box's menu at the top) picks the notes and chords of bass and synth – from Dark and Hypnotic to Euphoric, Sunny or Mysterious. On Auto every shuffle picks one that suits the vibe; a mood you pick stays. KEY (top right) moves the whole song to another key.");
                     row(ui, ph::LIGHTNING, "6 · Energy & drop", "The energy bar is the arrangement, not the volume (← →): under 30 a break with no kick and bass, then the tracks come in one by one, from 70 everything plays (a track the energy takes out is muted – the mute button shows it); by hand it starts full. DROP (B) builds up for two bars and drops.");
                     row(ui, ph::WAVEFORM, "7 · Effects & sound", "Hold STUTTER (Q), ECHO (W), WASH (E), CRUSH (X), GATE (C) or TAPE STOP (V) and combine them; The filter pad: left low-pass, right high-pass, up resonance – it springs back when you let go. Top right: the character pad (up DARK, right ACID), SPACE, PUMP, KEY (the song's key – the planets' notes stay steps of the scale) and DRIVE, and the EQ curve – drag its points. Double-click resets.");
-                    row(ui, ph::INFINITY, "8 · Auto mode", "The computer under the mood is the auto mode: its power button switches it on, Solari says hello and keeps the groove moving – something changes every 1 to 16 bars (SET in its title bar, where AUTO FX is too; OFF switches it off). Type to Solari: shuffle, vibe acid, drop, fx off, every 8, mood dark, bpm 135, status, joke, off. With AUTO FX on it also steers the energy and plays breakdowns, build-ups and drops by itself. With AUTO FX off the energy bar is yours and no track is ever taken out.");
+                    row(ui, ph::INFINITY, "8 · Auto mode", "The computer under the mood is the auto mode: its power button switches it on, Solari says hello and keeps the groove moving – something changes every 1 to 16 bars (SET in its title bar, where AUTO FX is too; OFF switches it off). Type to Solari: shuffle, vibe acid, drop, like, nope, taste, fx off, every 8, mood dark, bpm 135, status, joke, off. Every change is picked by ear from six tries, and the groove comes back to its theme before the drop. Thumb its last move up or down and it learns your taste; a track you edit stays yours for two phrases. With AUTO FX on it also steers the energy and plays breakdowns, build-ups and drops by itself – the map shows the cycle ahead. With AUTO FX off the energy bar is yours and no track is ever taken out.");
                     row(ui, ph::STACK, "9 · Favorites & auto song", "Click + under the space window to keep what you hear (twelve slots), click a full one to switch on the next bar, right-click to rename, save over or clear. AUTO SONG (the arrow next to the record button) makes a whole track from favorite 1 – a quiet intro, two or three drops, favorite 2 after the first – while you jam along. Click a part in the strip to jump there.");
                     row(ui, ph::RECORD, "10 · Record", "The red record button at the top (R) records everything you hear until you click it again – then save it as a WAV. An AUTO SONG records itself.");
                     row(ui, ph::SPARKLE, "11 · Visualizers", "Two fullscreen shows for a projector, with a small energy bar at the bottom: LIGHTS (P) – a spectrum ring, shockwaves and stars – and FACE (O) – a low-poly head that nods in time, glitches in a build-up, and on the drop screams with laser eyes, cracks and bursts apart. All keys keep working. Esc or a double-click goes back.");
@@ -3794,6 +3897,7 @@ impl eframe::App for SolarumApp {
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, "song", &self.song);
+        eframe::set_value(storage, "taste", &self.taste);
         eframe::set_value(storage, "view", &self.view);
         eframe::set_value(storage, "slots", &self.slots);
         eframe::set_value(storage, "sample_slots", &self.sample_slots);
@@ -3878,7 +3982,9 @@ impl SolarumApp {
         }
         let frame = |fill: Color32, margin: f32| egui::Frame::new().fill(fill).inner_margin(margin);
         if self.lib_ui.open {
-            concrete(&ctx.layer_painter(egui::LayerId::background()), ctx.screen_rect());
+            // Out in deep space, like the start screen and the view from the ship: stars drift past
+            let bg = ctx.layer_painter(egui::LayerId::background());
+            bg.rect_filled(ctx.screen_rect(), 0.0, SPACE);
             let playhead = match self.shared.audition.load(Ordering::Relaxed) {
                 u64::MAX => None,
                 p => Some(p as f64),
@@ -3887,6 +3993,8 @@ impl SolarumApp {
             egui::CentralPanel::default()
                 .frame(frame(Color32::TRANSPARENT, 0.0))
                 .show(ctx, |ui| {
+                    widgets::star_field(ui, &bg, ctx.screen_rect(), "sounds", 0.25, 0.8);
+                    ui.ctx().request_repaint_after(std::time::Duration::from_millis(40));
                     outs = self.lib_ui.show(ui, &mut self.library, &mut self.sample_slots, playhead, now);
                 });
             for o in outs {

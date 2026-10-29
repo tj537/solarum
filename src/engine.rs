@@ -55,12 +55,14 @@ pub enum Cmd {
     /// The auto mode builds on what's there: the empty tracks of this groove come in one per
     /// bar (kick first), then it goes on as usual
     Grow(Box<Song>),
+    /// What you kept and undid in SOLAR OS – the auto mode's director listens to it
+    Taste(crate::ear::Taste),
 }
 
 pub enum Event {
     /// The engine's song, what changed, and how many `Cmd::Song` it had taken in by then –
     /// the UI ignores a song older than its own last edit
-    Song(Box<Song>, Option<Change>, u64),
+    Song(Box<Song>, Option<Change>, u64, Option<crate::ear::Why>),
     /// Song mode records what plays: the next piece of interleaved stereo
     Audio(Vec<f32>),
     /// The recording is complete (song over or stopped, plus the tail)
@@ -71,7 +73,7 @@ impl Event {
     #[cfg(test)]
     pub fn change(self) -> Option<Change> {
         match self {
-            Event::Song(_, c, _) => c,
+            Event::Song(_, c, ..) => c,
             _ => None,
         }
     }
@@ -188,6 +190,10 @@ pub struct Shared {
     pub cycle_len: AtomicU32,
     pub cycle_break: AtomicU32,
     pub heat: AtomicU32,
+    /// How low the cycle's breakdown goes (energy in thousandths), so the UI can draw the curve
+    pub cycle_depth: AtomicU32,
+    /// Auto mode: the bar the next change lands on (`u64::MAX`: none planned)
+    pub next_change: AtomicU64,
     /// Set by the UI: while SOLAR OS plays, the energy may add ghost hats and thin out the
     /// percussion. By hand (auto off, no song) the pattern always plays exactly as written.
     pub touches: AtomicBool,
@@ -217,6 +223,8 @@ impl Shared {
             cycle_break: AtomicU32::new(NO_BREAK),
             touches: AtomicBool::new(true),
             heat: AtomicU32::new(500),
+            cycle_depth: AtomicU32::new(200),
+            next_change: AtomicU64::new(u64::MAX),
             audition: AtomicU64::new(u64::MAX),
         })
     }
@@ -465,6 +473,14 @@ pub struct Engine {
     heat: f32,
     /// What the auto mode changed lately
     recent: gen::Recent,
+    /// The theme: the tracks as the cycle began – the groove wanders off and comes back
+    home: [crate::song::Track; TRACKS],
+    /// What you like (from SOLAR OS)
+    taste: crate::ear::Taste,
+    /// Tracks you just edited by hand stay yours until this bar
+    hands_off: [u64; TRACKS],
+    /// Why the director picked the change that goes out next
+    why: Option<crate::ear::Why>,
     fill: Option<(u64, Fill)>,
     last_fill: Option<Fill>,
     arrangement: Option<Box<Arrangement>>,
@@ -613,6 +629,10 @@ impl Engine {
             cycle_len: 32,
             heat: 0.5,
             recent: Default::default(),
+            home: song.tracks,
+            taste: Default::default(),
+            hands_off: [0; TRACKS],
+            why: None,
             fill: None,
             last_fill: None,
             arrangement: None,
@@ -734,6 +754,20 @@ impl Engine {
                     }
                 }
                 let steps_before = self.song.tracks.map(|t| t.steps);
+                // One or two tracks edited by hand while the auto mode plays: they're yours for
+                // two phrases (more at once is a new groove, not an edit)
+                let edited = self.song.tracks.map(|t| (t.steps, t.len, t.sound));
+                let theirs_tracks = s.tracks.map(|t| (t.steps, t.len, t.sound));
+                let n = edited.iter().zip(&theirs_tracks).filter(|(a, b)| a != b).count();
+                if self.song.auto && (1..=2).contains(&n) {
+                    for (i, (a, b)) in edited.iter().zip(&theirs_tracks).enumerate() {
+                        if a != b {
+                            // Yours – and what you made is the theme it comes back to
+                            self.hands_off[i] = self.bar_now + 16;
+                            self.home[i] = s.tracks[i];
+                        }
+                    }
+                }
                 self.song = *s;
                 set_knobs(&mut self.song, keep);
                 // The energy's mutes win over a song from the UI that hasn't seen them yet
@@ -774,6 +808,7 @@ impl Engine {
                     self.send_song(None);
                 }
             }
+            Cmd::Taste(t) => self.taste = t,
             Cmd::Play => {
                 if !self.playing {
                     self.playing = true;
@@ -916,10 +951,11 @@ impl Engine {
         self.sr as f64 * 60.0 / self.song.bpm.clamp(60.0, 200.0) as f64 / 4.0
     }
 
-    fn send_song(&self, change: Option<Change>) {
+    fn send_song(&mut self, change: Option<Change>) {
         self.knob_sent.set(knobs(&self.song));
+        let why = self.why.take();
         if let Some(tx) = &self.events {
-            let _ = tx.send(Event::Song(Box::new(self.song), change, self.songs_in));
+            let _ = tx.send(Event::Song(Box::new(self.song), change, self.songs_in, why));
         }
     }
 
@@ -1124,13 +1160,22 @@ impl Engine {
             // and most likely as the set breathes out after its peak
             let n = self.drops_since_chapter;
             if (n >= 2 && (peaked || self.auto_rng.chance(0.35))) || n >= 4 {
+                // Tracks you're working on sit the new chapter out
+                let locks = self.song.tracks.map(|t| t.lock);
+                for (t, &until) in self.song.tracks.iter_mut().zip(&self.hands_off) {
+                    t.lock |= until > self.bar_now;
+                }
                 change = gen::new_chapter(&mut self.song, &mut self.auto_rng, peaked);
+                for (t, l) in self.song.tracks.iter_mut().zip(locks) {
+                    t.lock = l;
+                }
                 self.drops_since_chapter = 0;
             } else {
-                let mutes = self.song.auto_fx;
-                gen::evolve(&mut self.song, &mut self.auto_rng, mutes, true, &mut self.recent);
+                self.auto_change(true, 0.0);
                 self.drops_since_chapter += 1;
             }
+            // What the drop brought is the new cycle's theme
+            self.home = self.song.tracks;
             if self.song.auto_fx {
                 self.song.macros.energy = self.curve_target(0);
             }
@@ -1337,28 +1382,7 @@ impl Engine {
     /// towards the breakdown, falls to the plan's depth and creeps up through it, then
     /// climbs through the build-up. The heat of the cycle sets how high it all goes.
     fn curve_target(&self, b: u64) -> f32 {
-        let (h, at, build) = (self.heat, self.breakdown_at(), self.cycle_len - 2);
-        let drop = 0.9 + 0.08 * h;
-        let settle = 0.6 + 0.15 * h;
-        let top = settle + 0.08 + 0.1 * h;
-        if b < 8 {
-            drop - (drop - settle) * b as f32 / 8.0
-        } else if b < at {
-            // Terraces: a new level on every phrase, the top in the last one
-            let phrases = (at - 8).div_ceil(8).max(1);
-            let k = ((b - 8) / 8 + 1).min(phrases);
-            settle + (top - settle) * k as f32 / phrases as f32
-        } else if b < build {
-            let p = (b - at) as f32 / (build - at) as f32;
-            self.plan.depth + 0.15 * p * p
-        } else {
-            let from = if self.has_breakdown() {
-                (self.plan.depth + 0.3).max(0.5)
-            } else {
-                top - 0.15
-            };
-            from + (b - build) as f32 * 0.2
-        }
+        curve(b, self.cycle_len, self.breakdown_at(), self.plan.depth, self.heat)
     }
 
     /// Bar of the auto cycle where the breakdown starts – as far before its end as the plan says
@@ -1376,6 +1400,8 @@ impl Engine {
     /// and the cycle's length: calm cycles groove longer, the peak comes quick
     fn new_cycle(&mut self, bar: u64) {
         self.cycle_start = bar;
+        // How the groove sounds now is the theme of this cycle
+        self.home = self.song.tracks;
         let r = &mut self.auto_rng;
         self.heat = if self.heat >= 0.9 {
             0.3 + 0.2 * r.f32()
@@ -1411,6 +1437,32 @@ impl Engine {
         };
         sh.cycle_break.store(brk, Ordering::Relaxed);
         sh.heat.store((self.heat * 1000.0) as u32, Ordering::Relaxed);
+        sh.cycle_depth.store((self.plan.depth * 1000.0) as u32, Ordering::Relaxed);
+    }
+
+    /// The auto mode's next change, picked by ear (`crate::ear`): `progress` is how far into
+    /// the groove part of the cycle it lands
+    fn auto_change(&mut self, big: bool, progress: f32) -> Option<Change> {
+        let aim = crate::ear::Aim {
+            big,
+            mutes: self.song.auto_fx,
+            progress,
+            heat: self.heat,
+            hands_off: self.hands_off.map(|until| until > self.bar_now),
+        };
+        let (change, why) = crate::ear::choose(&mut self.song, &mut self.auto_rng, &aim, &mut self.recent, &self.home, &self.taste)?;
+        self.why = why;
+        Some(change)
+    }
+
+    /// Tell the UI on which bar the next change lands
+    fn publish_next_change(&self, bar: u64) {
+        let every = self.song.auto_bars.max(1) as u64;
+        let groove = if self.song.auto_fx { self.breakdown_at() } else { self.cycle_len };
+        let b = bar.saturating_sub(self.cycle_start);
+        let next = (b + 1).next_multiple_of(every);
+        let at = if next < groove { self.cycle_start + next } else { u64::MAX };
+        self.shared.next_change.store(at, Ordering::Relaxed);
     }
 
     /// Bar starts: drops, a waiting pattern, song mode, and in auto mode the arrangement
@@ -1493,10 +1545,11 @@ impl Engine {
         if b < groove && b.is_multiple_of(every) {
             // The big change opens a phrase; in between come small touches
             let big = b.is_multiple_of(8) || every >= 8;
-            if let Some(change) = gen::evolve(&mut self.song, &mut self.auto_rng, fx, big, &mut self.recent) {
+            if let Some(change) = self.auto_change(big, b as f32 / groove.max(1) as f32) {
                 self.send_song(Some(change));
             }
         }
+        self.publish_next_change(bar);
         let next = b + 1;
         if fx && next == at && self.has_breakdown() {
             // The clap thrown into the echo leads into the breakdown
@@ -2138,6 +2191,31 @@ impl Engine {
     }
 }
 
+/// The auto mode's energy curve over a cycle of `len` bars with its breakdown at bar `at`
+/// (`len - 2` or later: a roller without one) going down to `depth`, at the set's `heat` –
+/// the engine steers by it, SOLAR OS draws it
+pub fn curve(b: u64, len: u64, at: u64, depth: f32, h: f32) -> f32 {
+    let build = len.saturating_sub(2);
+    let has_breakdown = at < build;
+    let drop = 0.9 + 0.08 * h;
+    let settle = 0.6 + 0.15 * h;
+    let top = settle + 0.08 + 0.1 * h;
+    if b < 8 {
+        drop - (drop - settle) * b as f32 / 8.0
+    } else if b < at {
+        // Terraces: a new level on every phrase, the top in the last one
+        let phrases = (at - 8).div_ceil(8).max(1);
+        let k = ((b - 8) / 8 + 1).min(phrases);
+        settle + (top - settle) * k as f32 / phrases as f32
+    } else if b < build {
+        let p = (b - at) as f32 / (build - at) as f32;
+        depth + 0.15 * p * p
+    } else {
+        let from = if has_breakdown { (depth + 0.3).max(0.5) } else { top - 0.15 };
+        from + (b - build) as f32 * 0.2
+    }
+}
+
 /// Render `bars` bars of the song (plus a reverb tail) into interleaved stereo (tests, demo loops)
 #[cfg(test)]
 pub fn render_offline(song: &Song, bars: u32, sr: u32, seed: u64) -> Vec<f32> {
@@ -2591,6 +2669,58 @@ mod tests {
     }
 
     #[test]
+    fn a_track_you_edit_while_the_auto_mode_plays_stays_yours_for_two_phrases() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut song = gen::generate(Vibe::Acid, &Default::default(), &mut Rng::new(8));
+        song.auto = true;
+        song.auto_bars = 1;
+        song.bpm = 180.0;
+        let mut e = Engine::new(11_025.0, song, Shared::new(), Some(tx), 4);
+        e.handle(Cmd::Play);
+        let bar = (e.step_len() * STEPS as f64) as usize;
+        let mut buf = vec![0.0; 2 * bar];
+        for _ in 0..4 {
+            e.render(&mut buf);
+        }
+        let mut mine = e.song;
+        let s = &mut mine.track_mut(Voice::Bass).steps[3];
+        s.on = !s.on;
+        e.handle(Cmd::Song(Box::new(mine)));
+        let _ = rx.try_iter().count();
+        for _ in 0..15 {
+            e.render(&mut buf);
+            assert_eq!(e.song.track(Voice::Bass).steps, mine.track(Voice::Bass).steps);
+        }
+        let changes: Vec<Change> = rx.try_iter().filter_map(Event::change).collect();
+        assert!(changes.iter().filter(|c| c.voice().is_some()).count() >= 8, "{changes:?}");
+        assert!(changes.iter().all(|c| c.voice() != Some(Voice::Bass)), "{changes:?}");
+        // What you made is the theme now: the auto mode comes back to it, not to the old line
+        assert_eq!(e.home[Voice::Bass.index()].steps, mine.track(Voice::Bass).steps);
+    }
+
+    #[test]
+    fn the_director_explains_some_of_its_moves() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut song = gen::generate(Vibe::Peak, &Default::default(), &mut Rng::new(2));
+        song.auto = true;
+        song.auto_bars = 2;
+        song.bpm = 180.0;
+        let mut e = Engine::new(11_025.0, song, Shared::new(), Some(tx), 6);
+        e.handle(Cmd::Play);
+        let bar = (e.step_len() * STEPS as f64) as usize;
+        let mut buf = vec![0.0; 2 * bar];
+        for _ in 0..(32 * 6) {
+            e.render(&mut buf);
+        }
+        let whys: Vec<_> = rx
+            .try_iter()
+            .filter_map(|ev| if let Event::Song(_, _, _, w) = ev { w } else { None })
+            .collect();
+        assert!(whys.len() >= 3, "{whys:?}");
+        assert!(whys.contains(&crate::ear::Why::Home), "the theme comes back now and then: {whys:?}");
+    }
+
+    #[test]
     fn without_auto_fx_the_auto_mode_never_drops_by_itself() {
         let (tx, rx) = std::sync::mpsc::channel();
         let mut song = gen::generate(Vibe::Peak, &Default::default(), &mut Rng::new(8));
@@ -2643,7 +2773,7 @@ mod tests {
         e.handle(Cmd::Drop);
         let acks: Vec<u64> = rx
             .try_iter()
-            .filter_map(|ev| if let Event::Song(_, _, n) = ev { Some(n) } else { None })
+            .filter_map(|ev| if let Event::Song(_, _, n, _) = ev { Some(n) } else { None })
             .collect();
         assert_eq!(acks.last(), Some(&1));
     }
