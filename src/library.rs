@@ -615,13 +615,12 @@ pub fn template(v: Voice) -> Drawing {
 
 /// Any audio file → mono at `SAMPLE_SR`, at most `MAX_SECONDS`
 pub fn decode_file(path: &Path) -> Result<Vec<f32>, String> {
-    use symphonia::core::audio::SampleBuffer;
-    use symphonia::core::codecs::DecoderOptions;
+    use symphonia::core::codecs::audio::AudioDecoderOptions;
     use symphonia::core::errors::Error;
-    use symphonia::core::formats::FormatOptions;
+    use symphonia::core::formats::probe::Hint;
+    use symphonia::core::formats::{FormatOptions, TrackType};
     use symphonia::core::io::MediaSourceStream;
     use symphonia::core::meta::MetadataOptions;
-    use symphonia::core::probe::Hint;
 
     let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
@@ -629,25 +628,26 @@ pub fn decode_file(path: &Path) -> Result<Vec<f32>, String> {
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         hint.with_extension(ext);
     }
-    let probed = symphonia::default::get_probe()
-        .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+    let mut format = symphonia::default::get_probe()
+        .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
         .map_err(|_| "not an audio file Solarum can read".to_string())?;
-    let mut format = probed.format;
-    let track = format.default_track().ok_or("no audio in it")?;
+    let track = format.default_track(TrackType::Audio).ok_or("no audio in it")?;
     let track_id = track.id;
-    let sr = track.codec_params.sample_rate.unwrap_or(44_100) as f32;
+    let params = track.codec_params.as_ref().and_then(|p| p.audio()).ok_or("no audio in it")?;
+    let sr = params.sample_rate.unwrap_or(44_100) as f32;
     let mut decoder = symphonia::default::get_codecs()
-        .make(&track.codec_params, &DecoderOptions::default())
+        .make_audio_decoder(params, &AudioDecoderOptions::default())
         .map_err(|_| "this kind of audio isn't supported".to_string())?;
     let limit = (MAX_SECONDS * sr) as usize + 1;
     let mut mono = Vec::new();
+    let mut frame: Vec<f32> = Vec::new();
     while mono.len() < limit {
         let packet = match format.next_packet() {
-            Ok(p) => p,
-            Err(Error::IoError(_)) | Err(Error::ResetRequired) => break,
+            Ok(Some(p)) => p,
+            Ok(None) | Err(Error::IoError(_)) | Err(Error::ResetRequired) => break,
             Err(e) => return Err(e.to_string()),
         };
-        if packet.track_id() != track_id {
+        if packet.track_id != track_id {
             continue;
         }
         let decoded = match decoder.decode(&packet) {
@@ -655,10 +655,10 @@ pub fn decode_file(path: &Path) -> Result<Vec<f32>, String> {
             Err(Error::DecodeError(_)) => continue,
             Err(e) => return Err(e.to_string()),
         };
-        let ch = decoded.spec().channels.count().max(1);
-        let mut buf = SampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec());
-        buf.copy_interleaved_ref(decoded);
-        mono.extend(buf.samples().chunks(ch).map(|f| f.iter().sum::<f32>() / ch as f32));
+        let ch = decoded.spec().channels().count().max(1);
+        frame.resize(decoded.samples_interleaved(), 0.0);
+        decoded.copy_to_slice_interleaved(&mut frame);
+        mono.extend(frame.chunks(ch).map(|f| f.iter().sum::<f32>() / ch as f32));
     }
     if mono.is_empty() {
         return Err("the file is empty".into());
