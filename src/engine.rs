@@ -969,6 +969,8 @@ impl Engine {
     }
 
     fn step_len(&self) -> f64 {
+        // Wider than `song::BPM` on purpose: only a guard against dividing by nothing (the
+        // UI and files keep to `BPM`; tests run at 200 to stay short)
         self.sr as f64 * 60.0 / self.song.bpm.clamp(60.0, 200.0) as f64 / 4.0
     }
 

@@ -10,6 +10,8 @@ pub const STEPS: usize = 16;
 pub const NOTES: std::ops::RangeInclusive<i8> = -12..=24;
 /// Every note a step can hold: two octaves below the root to three above
 pub const NOTE_LIMITS: std::ops::RangeInclusive<i8> = -24..=36;
+/// The tempo range a song can have (every knob, key and file goes through it)
+pub const BPM: std::ops::RangeInclusive<f32> = 90.0..=180.0;
 pub const NOTE_NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
 /// The name of a note `semis` above the MIDI note `root`, e.g. "F#"
@@ -551,7 +553,7 @@ impl Song {
             }
         }
         let fix = |v: f32, lo: f32, hi: f32, def: f32| if v.is_finite() { v.clamp(lo, hi) } else { def };
-        self.bpm = fix(self.bpm, 90.0, 180.0, 130.0);
+        self.bpm = fix(self.bpm, *BPM.start(), *BPM.end(), 130.0);
         self.swing = fix(self.swing, 0.0, 1.0, 0.0);
         self.master = fix(self.master, 0.0, 1.0, 0.8);
         let m = &mut self.macros;
