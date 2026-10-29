@@ -46,6 +46,11 @@ pub fn pad_for(note: u8) -> Voice {
 /// Decode one MIDI message; `held` tracks the keys that transpose
 pub fn decode(msg: &[u8], held: &mut Vec<u8>) -> Option<Midi> {
     let (&status, rest) = msg.split_first()?;
+    // A status byte has the top bit set and data bytes never do: anything else is a broken
+    // device or port, and a note above 127 would transpose by nonsense
+    if status < 0x80 || rest.iter().any(|&b| b > 0x7F) {
+        return None;
+    }
     let kind = status & 0xF0;
     match (kind, rest) {
         (0x90, &[note, vel]) if vel > 0 => {
@@ -175,6 +180,15 @@ mod tests {
         assert_eq!(decode(&[0x80, 67, 0], &mut held), Some(Midi::Transpose(Some(3))));
         // Note-on with velocity 0 is a note-off
         assert_eq!(decode(&[0x90, 63, 0], &mut held), Some(Midi::Transpose(None)));
+    }
+
+    #[test]
+    fn broken_bytes_are_ignored() {
+        let mut held = Vec::new();
+        assert_eq!(decode(&[0x90, 200, 100], &mut held), None);
+        assert_eq!(decode(&[0x90, 64, 0xFF], &mut held), None);
+        assert_eq!(decode(&[0x40, 64, 100], &mut held), None);
+        assert!(held.is_empty());
     }
 
     #[test]
