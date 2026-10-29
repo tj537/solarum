@@ -2,6 +2,9 @@
 name = "solarum"
 version = "0.9.0"
 edition = "2021"
+# Checked with `cargo +1.96 check --all-targets` (1.95 fails: it can't infer the slice
+# types in gen.rs's tables)
+rust-version = "1.96"
 description = "Techno beats in orbit – a playful drum machine with bass, acid and an auto mode"
 license = "MIT"
 repository = "https://github.com/tj537/solarum"

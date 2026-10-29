@@ -1,0 +1,22 @@
+# Weekly pull requests for the pinned GitHub Actions (SHA + version comment) and the crates.
+# egui, eframe and egui-phosphor are left out: they're upgraded together by hand.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: eframe
+      - dependency-name: egui*
+    groups:
+      crates:
+        update-types: [minor, patch]

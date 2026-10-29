@@ -211,7 +211,7 @@ More detail is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Build it yourself
 
-You need [Rust](https://rustup.rs). On Linux you also need `libasound2-dev` and `libgtk-3-dev`.
+You need [Rust](https://rustup.rs) 1.96 or newer. On Linux you also need `libasound2-dev` and `libgtk-3-dev`.
 
 ```bash
 cargo run --release

@@ -1,0 +1,21 @@
+# cargo deny: known security problems in the dependencies (RustSec advisory database).
+# Licenses are collected separately (about.toml, scripts/third-party-licenses.sh).
+#
+# Every ignore says why it can't hurt Solarum and goes away with the next egui upgrade
+# (egui, eframe and egui-phosphor are upgraded together by hand).
+[advisories]
+version = 2
+yanked = "deny"
+ignore = [
+  # quick-xml 0.30 in zbus_xml, only for Linux accessibility (accesskit_unix): it reads
+  # D-Bus introspection from the local session bus, never a file or the network. Linux
+  # isn't released.
+  { id = "RUSTSEC-2026-0194", reason = "Linux-only accessibility, trusted local D-Bus XML" },
+  { id = "RUSTSEC-2026-0195", reason = "Linux-only accessibility, trusted local D-Bus XML" },
+  # Unmaintained, no known vulnerability – all inside eframe/egui 0.31
+  { id = "RUSTSEC-2024-0436", reason = "paste (proc-macro, build time only) via accesskit_windows" },
+  { id = "RUSTSEC-2026-0192", reason = "ttf-parser via epaint; parses only the fonts compiled into Solarum" },
+  { id = "RUSTSEC-2026-0370", reason = "zvariant via accesskit_unix (Linux only)" },
+  { id = "RUSTSEC-2026-0371", reason = "zbus_names via accesskit_unix (Linux only)" },
+  { id = "RUSTSEC-2026-0372", reason = "zvariant_derive via accesskit_unix (Linux only)" },
+]

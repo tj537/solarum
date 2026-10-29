@@ -13,7 +13,7 @@ You don't need to be a Rust expert or a musician. If you're unsure about anythin
 
 ## Getting started
 
-You need [Rust](https://rustup.rs) (stable). On Linux you also need a few libraries:
+You need [Rust](https://rustup.rs) 1.96 or newer (stable). On Linux you also need a few libraries:
 
 ```bash
 sudo apt-get install libasound2-dev libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev
