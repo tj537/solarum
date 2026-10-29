@@ -271,8 +271,8 @@ impl SolarumApp {
                 Key::ArrowLeft => self.set_energy(self.song.macros.energy - 0.05, now),
                 Key::P => self.show(ctx, false),
                 Key::O => self.show(ctx, true),
-                Key::ArrowUp => self.song.bpm = (self.song.bpm + 1.0).min(180.0),
-                Key::ArrowDown => self.song.bpm = (self.song.bpm - 1.0).max(90.0),
+                Key::ArrowUp => self.song.bpm = (self.song.bpm + 1.0).min(*crate::song::BPM.end()),
+                Key::ArrowDown => self.song.bpm = (self.song.bpm - 1.0).max(*crate::song::BPM.start()),
                 Key::R => self.toggle_capture(now),
                 _ => {}
             }

@@ -271,13 +271,13 @@ impl SolarumApp {
         let (rect, resp) = ui.allocate_exact_size(vec2(176.0, 42.0), Sense::click_and_drag());
         if resp.dragged() {
             let d = resp.drag_delta();
-            self.song.bpm = (self.song.bpm + (d.x - d.y) * 0.15).clamp(90.0, 180.0);
+            self.song.bpm = (self.song.bpm + (d.x - d.y) * 0.15).clamp(*crate::song::BPM.start(), *crate::song::BPM.end());
         }
         if resp.hovered() {
             let s = ui.input(|i| i.raw_scroll_delta.y);
             let n = orbit::scroll_notches(&mut self.bpm_scroll, s, 24.0);
             if n != 0 {
-                self.song.bpm = (self.song.bpm.round() + n as f32).clamp(90.0, 180.0);
+                self.song.bpm = (self.song.bpm.round() + n as f32).clamp(*crate::song::BPM.start(), *crate::song::BPM.end());
             }
         }
         if !resp.dragged() {
@@ -347,16 +347,20 @@ impl SolarumApp {
                 .on_hover_text("1 BPM slower")
                 .clicked()
             {
-                self.song.bpm = (self.song.bpm - 1.0).max(90.0);
+                self.song.bpm = (self.song.bpm - 1.0).max(*crate::song::BPM.start());
             }
             ui.spacing_mut().slider_width = 220.0;
-            ui.add(egui::Slider::new(&mut self.song.bpm, 90.0..=180.0).show_value(false).step_by(1.0));
+            ui.add(
+                egui::Slider::new(&mut self.song.bpm, crate::song::BPM)
+                    .show_value(false)
+                    .step_by(1.0),
+            );
             if ui
                 .button(egui::RichText::new("+").font(bold(14.0)))
                 .on_hover_text("1 BPM faster")
                 .clicked()
             {
-                self.song.bpm = (self.song.bpm + 1.0).min(180.0);
+                self.song.bpm = (self.song.bpm + 1.0).min(*crate::song::BPM.end());
             }
             let on = self.metronome;
             if chip(ui, ph::METRONOME, on, ACID)

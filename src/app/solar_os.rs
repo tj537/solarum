@@ -132,7 +132,7 @@ impl SolarumApp {
             },
             "bpm" | "tempo" => match arg.parse::<f32>() {
                 Ok(b) => {
-                    self.song.bpm = b.clamp(90.0, 180.0);
+                    self.song.bpm = b.clamp(*crate::song::BPM.start(), *crate::song::BPM.end());
                     self.bunk(format!("{:.0} BPM.", self.song.bpm), now);
                 }
                 Err(_) => self.bunk(format!("We're at {:.0} BPM, bro. Say bpm 135 to change it.", self.song.bpm), now),
@@ -249,7 +249,7 @@ impl SolarumApp {
             return;
         }
         let bpm = self.glide_bpm.map_or(self.song.bpm, |g| g.0);
-        let goal = (bpm + 3.0 * (d - self.drive)).clamp(90.0, 180.0);
+        let goal = (bpm + 3.0 * (d - self.drive)).clamp(*crate::song::BPM.start(), *crate::song::BPM.end());
         self.drive = d;
         self.send(Cmd::Drive(d));
         self.glide_bpm = Some((goal, self.song.bpm));
