@@ -804,10 +804,10 @@ impl Take {
 
 /// The names of the inputs (microphones, interfaces)
 pub fn inputs() -> Vec<String> {
-    use cpal::traits::{DeviceTrait, HostTrait};
+    use cpal::traits::HostTrait;
     cpal::default_host()
         .input_devices()
-        .map(|d| d.filter_map(|d| d.name().ok()).collect())
+        .map(|d| d.filter_map(|d| crate::audio::device_name(&d)).collect())
         .unwrap_or_default()
 }
 
@@ -817,12 +817,16 @@ impl Recorder {
         use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
         let host = cpal::default_host();
         let device = input
-            .and_then(|name| host.input_devices().ok()?.find(|d| d.name().is_ok_and(|n| n == name)))
+            .and_then(|name| {
+                host.input_devices()
+                    .ok()?
+                    .find(|d| crate::audio::device_name(d).is_some_and(|n| n == name))
+            })
             .or_else(|| host.default_input_device())
             .ok_or("no microphone found")?;
         let config = device.default_input_config().map_err(|e| e.to_string())?;
         let ch = config.channels().max(1) as usize;
-        let sr = config.sample_rate().0 as f32;
+        let sr = config.sample_rate() as f32;
         let shared = Arc::new(Mutex::new(Take::new((MAX_SECONDS * sr) as usize)));
         let level = Arc::new(AtomicU32::new(0));
         let (d, l) = (shared.clone(), level.clone());

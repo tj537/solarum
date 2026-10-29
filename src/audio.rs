@@ -19,7 +19,12 @@ pub struct Audio {
 
 /// Name of the system's current default output (to notice headphones being plugged in)
 pub fn default_device_name() -> Option<String> {
-    cpal::default_host().default_output_device().and_then(|d| d.name().ok())
+    cpal::default_host().default_output_device().as_ref().and_then(device_name)
+}
+
+/// The name a device shows to people (output or input)
+pub fn device_name(device: &cpal::Device) -> Option<String> {
+    device.description().ok().map(|d| d.name().to_string())
 }
 
 /// Open the default output and start the engine. Commands come in on `rx`,
@@ -28,9 +33,9 @@ pub fn default_device_name() -> Option<String> {
 pub fn start(song: Song, rx: Receiver<Cmd>, events: Sender<Event>, shared: Arc<Shared>, failed: Arc<AtomicBool>) -> Result<Audio, String> {
     let host = cpal::default_host();
     let device = host.default_output_device().ok_or("No audio output found")?;
-    let name = device.name().unwrap_or_else(|_| "Audio output".into());
+    let name = device_name(&device).unwrap_or_else(|| "Audio output".into());
     let config = device.default_output_config().map_err(|e| e.to_string())?;
-    let sr = config.sample_rate().0;
+    let sr = config.sample_rate();
     let channels = config.channels() as usize;
     let format = config.sample_format();
     let mut stream_config: cpal::StreamConfig = config.into();
