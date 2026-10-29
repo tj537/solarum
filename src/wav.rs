@@ -1,6 +1,6 @@
 //! WAV files: 16-bit stereo PCM, written by hand (the format is tiny).
 
-use std::io::{self, Write};
+use std::io;
 use std::path::Path;
 
 /// A float sample as 16 bits
@@ -44,8 +44,7 @@ fn encode_channels(samples: &[i16], sr: u32, channels: u16) -> Vec<u8> {
 }
 
 pub fn write_i16(path: &Path, samples: &[i16], sr: u32) -> io::Result<()> {
-    let mut f = std::fs::File::create(path)?;
-    f.write_all(&encode_i16(samples, sr))
+    crate::file::write_atomic(path, &encode_i16(samples, sr))
 }
 
 #[cfg(test)]

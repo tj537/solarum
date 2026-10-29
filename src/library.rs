@@ -216,10 +216,7 @@ impl Library {
             entries: self.entries.clone(),
         };
         if let Ok(text) = ron::ser::to_string_pretty(&index, Default::default()) {
-            let tmp = dir.join("library.ron.tmp");
-            if std::fs::write(&tmp, text).is_ok() {
-                let _ = std::fs::rename(tmp, dir.join("library.ron"));
-            }
+            let _ = crate::file::write_atomic(&dir.join("library.ron"), text.as_bytes());
         }
     }
 
@@ -241,9 +238,9 @@ impl Library {
         let source = new_id();
         if let Some(dir) = &self.dir {
             let pcm: Vec<i16> = data.iter().map(|&s| crate::wav::to_i16(s)).collect();
-            let _ = std::fs::write(
-                dir.join(format!("{source}.wav")),
-                crate::wav::encode_mono_i16(&pcm, SAMPLE_SR as u32),
+            let _ = crate::file::write_atomic(
+                &dir.join(format!("{source}.wav")),
+                &crate::wav::encode_mono_i16(&pcm, SAMPLE_SR as u32),
             );
         }
         let mut edit = Edit::default();
@@ -328,7 +325,7 @@ impl Library {
             let Some(data) = unpack_audio(text) else { continue };
             if let Some(dir) = &self.dir {
                 let pcm: Vec<i16> = data.iter().map(|&s| crate::wav::to_i16(s)).collect();
-                let _ = std::fs::write(dir.join(format!("{id}.wav")), crate::wav::encode_mono_i16(&pcm, SAMPLE_SR as u32));
+                let _ = crate::file::write_atomic(&dir.join(format!("{id}.wav")), &crate::wav::encode_mono_i16(&pcm, SAMPLE_SR as u32));
             }
             self.sources.insert(*id, Arc::new(Source::new(data)));
         }

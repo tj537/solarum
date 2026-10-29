@@ -5,6 +5,8 @@
 use crate::app::SLOTS;
 use crate::song::Song;
 use serde::{Deserialize, Serialize};
+use std::io::Write;
+use std::path::Path;
 
 pub const EXTENSION: &str = "solarum";
 
@@ -58,11 +60,11 @@ impl SolarumFile {
         Ok(f)
     }
 
-    pub fn save(&self, path: &std::path::Path) -> Result<(), String> {
-        std::fs::write(path, self.to_text()).map_err(|e| e.to_string())
+    pub fn save(&self, path: &Path) -> Result<(), String> {
+        write_atomic(path, self.to_text().as_bytes()).map_err(|e| e.to_string())
     }
 
-    pub fn load(path: &std::path::Path) -> Result<Self, String> {
+    pub fn load(path: &Path) -> Result<Self, String> {
         // Files get shared: refuse one too big to be a project before reading it all
         if std::fs::metadata(path).map_err(|e| e.to_string())?.len() > MAX_BYTES {
             return Err("too big for a Solarum file".into());
@@ -70,6 +72,21 @@ impl SolarumFile {
         let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
         Self::from_text(&text)
     }
+}
+
+/// Write a file so a crash or a full disk never leaves half of it: into a temporary file
+/// beside it, flushed to the disk, then renamed over the old one (the old one stays on failure)
+pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".tmp");
+    let tmp = std::path::PathBuf::from(tmp);
+    let written = std::fs::File::create(&tmp)
+        .and_then(|mut f| f.write_all(bytes).and_then(|_| f.sync_all()))
+        .and_then(|_| std::fs::rename(&tmp, path));
+    if written.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    written
 }
 
 #[cfg(test)]
@@ -103,6 +120,27 @@ mod tests {
         assert_eq!(old.scenes.len(), SLOTS);
         assert!(old.scenes[1].is_some() && old.scenes[4..].iter().all(|s| s.is_none()));
         assert_eq!(old.names.len(), SLOTS);
+    }
+
+    #[test]
+    fn saving_replaces_the_file_whole_and_leaves_no_temporary_one() {
+        let dir = std::env::temp_dir().join(format!("solarum-save-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("set.solarum");
+        std::fs::write(&path, "old").unwrap();
+        let f = SolarumFile::default();
+        f.save(&path).unwrap();
+        let back = SolarumFile::load(&path).unwrap();
+        let left: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().map(|e| e.file_name()).collect();
+        // A folder where the file should go can't be replaced: the save fails, nothing is left behind
+        std::fs::create_dir(dir.join("x.solarum")).unwrap();
+        assert!(f.save(&dir.join("x.solarum")).is_err());
+        std::fs::remove_dir(dir.join("x.solarum")).unwrap();
+        let after: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().map(|e| e.file_name()).collect();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(back, f);
+        assert_eq!(left, vec![std::ffi::OsString::from("set.solarum")]);
+        assert_eq!(after, left);
     }
 
     #[test]
