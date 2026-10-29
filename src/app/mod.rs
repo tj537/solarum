@@ -26,6 +26,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 mod devices;
+mod history;
 mod project;
 
 /// Favorites: saved grooves (the first four are the patterns of AUTO SONG)
@@ -490,26 +491,6 @@ impl SolarumApp {
             samples_sent: Default::default(),
             retired: Vec::new(),
             solari_drop_at: 0.0,
-        }
-    }
-
-    fn undo(&mut self, now: f64) {
-        if let Some(prev) = self.undo.pop() {
-            self.redo.push(self.song);
-            self.song = keep_live_settings(prev, &self.song);
-            self.restoring = true;
-            self.slot_now = None;
-            self.say("Undo", now);
-        }
-    }
-
-    fn redo(&mut self, now: f64) {
-        if let Some(next) = self.redo.pop() {
-            self.undo.push(self.song);
-            self.song = keep_live_settings(next, &self.song);
-            self.restoring = true;
-            self.slot_now = None;
-            self.say("Redo", now);
         }
     }
 
