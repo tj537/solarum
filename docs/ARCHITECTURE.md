@@ -103,6 +103,9 @@ The filter pad sends `Cmd::Filter` (position) and `Cmd::FilterRes` (resonance: Q
 - **Solo** – remembers everyone's mute state and puts it back when the solo ends.
 - **Devices** – every 3 s the UI checks the number of MIDI ports and the name of the default audio output. New port count → reconnect MIDI; another default output (headphones) or a failed stream (`audio_failed`, set by cpal's error callback) → `restart_audio` builds a new engine on new channels and reconnects MIDI to it.
 - **Loaded state is repaired** with `Song::sanitize` (lengths 1–16, finite volumes, tempo 90–180 …), also when the engine receives a song.
+- **Shared files are untrusted** – `SolarumFile::load` refuses files over 160 MB, `Library::unpack` takes at most `SAMPLE_SLOTS` sounds of at most `MAX_SECONDS` each and repairs their edits (`Edit::sanitize`, also for `library.ron`); a rendered sound never holds NaN. If the output still goes non-finite, the master plays silence and sets `Shared::broken`, and the UI's 3-second device check builds a fresh engine.
+- **Saving** goes through `file::write_atomic` (a `.tmp` beside the file, synced, renamed over it): projects, recordings, the library index and its WAVs.
+- **The microphone** (`Recorder`) fills a `Take` allocated for 30 s up front, with a peak per 256 samples; the screen draws only those peaks (`snapshot`), so the input callback neither allocates nor waits long for the lock.
 
 ## Generator
 

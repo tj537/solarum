@@ -745,9 +745,61 @@ fn unpack_audio(text: &str) -> Option<Vec<f32>> {
 /// A running recording from an input device
 pub struct Recorder {
     _stream: cpal::Stream,
-    data: Arc<Mutex<Vec<f32>>>,
+    take: Arc<Mutex<Take>>,
     level: Arc<AtomicU32>,
     sr: f32,
+}
+
+/// Samples per peak in `Take::peaks`
+const PEAK_BLOCK: usize = 256;
+
+/// What the microphone brought so far, with the peak of every `PEAK_BLOCK` samples, so the
+/// waveform can be drawn while it records without going through (or holding the lock over)
+/// every sample. Both are allocated for the longest take up front: the input callback never
+/// allocates.
+struct Take {
+    data: Vec<f32>,
+    peaks: Vec<f32>,
+    /// The peak of the block not yet full
+    open: f32,
+    limit: usize,
+}
+
+impl Take {
+    fn new(limit: usize) -> Self {
+        Take {
+            data: Vec::with_capacity(limit),
+            peaks: Vec::with_capacity(limit / PEAK_BLOCK + 1),
+            open: 0.0,
+            limit,
+        }
+    }
+
+    fn push(&mut self, s: f32) {
+        if self.data.len() >= self.limit {
+            return;
+        }
+        self.data.push(s);
+        self.open = self.open.max(s.abs());
+        if self.data.len().is_multiple_of(PEAK_BLOCK) {
+            self.peaks.push(self.open);
+            self.open = 0.0;
+        }
+    }
+
+    /// At most `max` peaks over the whole take so far
+    fn waveform(&self, max: usize) -> Vec<f32> {
+        let partial = !self.data.len().is_multiple_of(PEAK_BLOCK);
+        let n = self.peaks.len() + partial as usize;
+        let step = n.div_ceil(max.max(1)).max(1);
+        let all = self.peaks.iter().copied().chain(partial.then_some(self.open));
+        let mut out = Vec::with_capacity(n / step + 1);
+        let mut it = all.peekable();
+        while it.peek().is_some() {
+            out.push(it.by_ref().take(step).fold(0.0f32, f32::max));
+        }
+        out
+    }
 }
 
 /// The names of the inputs (microphones, interfaces)
@@ -771,18 +823,15 @@ impl Recorder {
         let config = device.default_input_config().map_err(|e| e.to_string())?;
         let ch = config.channels().max(1) as usize;
         let sr = config.sample_rate().0 as f32;
-        let data = Arc::new(Mutex::new(Vec::with_capacity((sr * 10.0) as usize)));
+        let shared = Arc::new(Mutex::new(Take::new((MAX_SECONDS * sr) as usize)));
         let level = Arc::new(AtomicU32::new(0));
-        let limit = (MAX_SECONDS * sr) as usize;
-        let (d, l) = (data.clone(), level.clone());
+        let (d, l) = (shared.clone(), level.clone());
         let take = move |frames: &mut dyn Iterator<Item = f32>| {
             let mut peak = 0.0f32;
-            if let Ok(mut buf) = d.lock() {
+            if let Ok(mut t) = d.lock() {
                 for s in frames {
                     peak = peak.max(s.abs());
-                    if buf.len() < limit {
-                        buf.push(s);
-                    }
+                    t.push(s);
                 }
             }
             let old = f32::from_bits(l.load(Ordering::Relaxed));
@@ -821,7 +870,7 @@ impl Recorder {
         stream.play().map_err(|e| e.to_string())?;
         Ok(Recorder {
             _stream: stream,
-            data,
+            take: shared,
             level,
             sr,
         })
@@ -833,19 +882,18 @@ impl Recorder {
     }
 
     pub fn seconds(&self) -> f32 {
-        self.data.lock().map(|d| d.len()).unwrap_or(0) as f32 / self.sr
+        self.take.lock().map(|t| t.data.len()).unwrap_or(0) as f32 / self.sr
     }
 
-    /// The waveform so far (for drawing while it records)
+    /// The waveform so far (for drawing while it records): reads only the block peaks, so
+    /// the microphone never waits for the screen
     pub fn snapshot(&self, max: usize) -> Vec<f32> {
-        let d = self.data.lock().map(|d| d.clone()).unwrap_or_default();
-        let step = (d.len() / max.max(1)).max(1);
-        d.chunks(step).map(|c| c.iter().fold(0.0f32, |m, s| m.max(s.abs()))).collect()
+        self.take.lock().map(|t| t.waveform(max)).unwrap_or_default()
     }
 
     /// Stop; the audio at `SAMPLE_SR`
     pub fn finish(self) -> Vec<f32> {
-        let d = self.data.lock().map(|d| d.clone()).unwrap_or_default();
+        let d = self.take.lock().map(|mut t| std::mem::take(&mut t.data)).unwrap_or_default();
         resample(&d, self.sr, SAMPLE_SR)
     }
 }
@@ -976,6 +1024,26 @@ mod tests {
         assert_eq!((e.gain, e.pitch, e.low_cut, e.fade_in), (24.0, 0.0, 20.0, 0.0));
         let buf = lib.sound(1).unwrap();
         assert!(buf.data.iter().all(|s| s.is_finite() && s.abs() <= 1.0));
+    }
+
+    #[test]
+    fn a_take_keeps_its_peaks_without_allocating_more() {
+        let mut t = Take::new(PEAK_BLOCK * 10 + 7);
+        let (cap, peaks_cap) = (t.data.capacity(), t.peaks.capacity());
+        for i in 0..PEAK_BLOCK * 20 {
+            // One loud sample in the fourth block
+            t.push(if i == PEAK_BLOCK * 3 + 5 { -0.9 } else { 0.1 });
+        }
+        assert_eq!(t.data.len(), PEAK_BLOCK * 10 + 7, "stops at the limit");
+        assert_eq!((t.data.capacity(), t.peaks.capacity()), (cap, peaks_cap));
+        // Ten full blocks and the partial one
+        let w = t.waveform(100);
+        assert_eq!(w.len(), 11);
+        assert_eq!(w[3], 0.9);
+        assert!(w.iter().enumerate().all(|(i, &p)| i == 3 || p == 0.1));
+        // Fewer columns: each is the loudest of its blocks
+        assert_eq!(t.waveform(4), vec![0.1, 0.9, 0.1, 0.1]);
+        assert!(Take::new(100).waveform(10).is_empty());
     }
 
     #[test]
