@@ -202,14 +202,40 @@ pub fn filter_pad(ui: &mut Ui, pos: &mut f32, res: &mut f32, engine_pos: f32, wi
         ui.ctx().request_repaint();
     }
 
+    // No grid like the character pad's (that one stays where you leave it): each half
+    // tinted faintly in its filter's colour, and a home in the middle the puck is tied to
     let p = ui.painter_at(rect.expand(2.0));
-    pad_frame(&p, rect);
+    p.rect_filled(rect, 12.0, Color32::from_black_alpha(80));
+    let inner = rect.shrink(1.0);
+    let (l, r) = (11, 0);
+    p.rect_filled(
+        Rect::from_min_max(inner.min, pos2(inner.center().x, inner.bottom())),
+        egui::CornerRadius {
+            nw: l,
+            sw: l,
+            ne: r,
+            se: r,
+        },
+        LOW_PASS.gamma_multiply(0.07),
+    );
+    p.rect_filled(
+        Rect::from_min_max(pos2(inner.center().x, inner.top()), inner.max),
+        egui::CornerRadius {
+            nw: r,
+            sw: r,
+            ne: l,
+            se: l,
+        },
+        HIGH_PASS.gamma_multiply(0.035),
+    );
+    p.rect_stroke(rect, 12.0, stroke(1.0, LINE), egui::StrokeKind::Inside);
     dashed(
         &p,
         pos2(rect.center().x, rect.top() + 22.0),
         pos2(rect.center().x, rect.bottom()),
         alpha(TEXT, 0.25),
     );
+    let home = pos2(rect.center().x, rest_y);
     let color = if (if held || pos.abs() > 0.01 { *pos } else { engine_pos }) < 0.0 {
         LOW_PASS
     } else {
@@ -244,8 +270,12 @@ pub fn filter_pad(ui: &mut Ui, pos: &mut f32, res: &mut f32, engine_pos: f32, wi
         rest_y - *res * (rest_y - rect.top() - 12.0),
     );
     let amount = shown.abs().max(*res);
-    if shown.abs() > 0.01 {
-        p.line_segment([pos2(rect.center().x, at.y), at], stroke(3.0, alpha(color, 0.6)));
+    // The rubber band: thinner the further it's pulled, so letting go clearly snaps back
+    p.circle_stroke(home, 5.0, stroke(1.5, alpha(TEXT, 0.35)));
+    let stretch = (at - home).length();
+    if stretch > 12.0 {
+        let w = (4.0 - stretch / 60.0).max(1.5);
+        p.line_segment([home, at], stroke(w, alpha(color, 0.7)));
     }
     glow(&p, at, 11.0, color, amount);
     p.circle_filled(at, 11.0, mix(PANEL, BG, 0.5));
