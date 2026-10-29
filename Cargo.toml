@@ -16,7 +16,7 @@ serde = { version = "1", features = ["derive"] }
 cpal = "0.16"
 midir = "0.11"
 rfd = "0.15"
-ron = "0.8"
+ron = "0.12"
 # Importing your own sounds
 symphonia = { version = "0.5", default-features = false, features = ["wav", "aiff", "mp3", "flac", "ogg", "vorbis", "pcm"] }
 
