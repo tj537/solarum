@@ -308,6 +308,26 @@ mod tests {
             app.lib_ui.show_for(None);
             app.lib_ui.finish_with(id, crate::library_ui::Step::Record);
         });
+        // A take right after recording, in the editor: swells and tapers like a pine cone (the website picture)
+        render("sounds_recorded", 1360.0, 860.0, |app| {
+            let sr = crate::sampler::SAMPLE_SR;
+            let mut rng = crate::rng::Rng::new(11);
+            let len = sr * 1.4;
+            let take: Vec<f32> = (0..len as usize)
+                .map(|i| {
+                    let t = i as f32 / sr;
+                    let x = i as f32 / len;
+                    let env = (std::f32::consts::PI * x.powf(0.7)).sin().powf(1.4);
+                    let scales = 1.0 - 0.22 * (std::f32::consts::TAU * 11.0 * t).sin().abs();
+                    let tone = (std::f32::consts::TAU * 190.0 * t).sin() * 0.7 + rng.noise() * 0.3;
+                    tone * env * scales * 0.9
+                })
+                .collect();
+            let id = app.library.add("Glass tap", crate::song::Voice::Rim, take);
+            app.library.set_draft(id, true);
+            app.lib_ui.show_for(None);
+            app.lib_ui.finish_with(id, crate::library_ui::Step::Record);
+        });
         // Luna says hello as the computer comes on (render time is ~10 s)
         render("home", 1360.0, 860.0, |app| {
             app.home = true;
