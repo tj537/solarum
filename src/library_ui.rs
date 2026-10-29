@@ -2010,7 +2010,13 @@ impl LibraryUi {
                     .color(DIM),
                 );
                 ui.add_enabled_ui(self.recorder.is_none(), |ui| {
+                    // As tall as the dropdown, so "Input" lines up with its middle
+                    ui.spacing_mut().interact_size.y = 28.0;
                     ui.horizontal(|ui| {
+                        // A row starts on the left: pad it so it sits centred like the rest
+                        let label = ui.fonts(|f| f.layout_no_wrap("Input".into(), bold(12.0), DIM).size().x);
+                        let row = label + ui.spacing().item_spacing.x + 300.0;
+                        ui.add_space(((ui.available_width() - row) / 2.0).max(0.0));
                         ui.label(egui::RichText::new("Input").font(bold(12.0)).color(DIM));
                         egui::ComboBox::from_id_salt("rec_input")
                             .selected_text(self.input.clone().unwrap_or_else(|| "Default input".into()))
@@ -2030,7 +2036,8 @@ impl LibraryUi {
                 // Level and what came in so far
                 let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 130.0), Sense::hover());
                 let p = ui.painter();
-                p.rect_filled(r, 8.0, SPACE);
+                p.rect_filled(r, 8.0, mix(SPACE, PANEL, 0.3));
+                p.rect_stroke(r, 8.0, stroke(1.0, alpha(LINE, 0.6)), egui::StrokeKind::Inside);
                 if let Some(rec) = &self.recorder {
                     let peaks = rec.snapshot(r.width() as usize);
                     let w = r.width() / (MAX_SECONDS * 20.0);
@@ -2045,8 +2052,12 @@ impl LibraryUi {
                     let meter = Rect::from_min_size(pos2(r.left(), r.bottom() + 4.0), vec2(r.width() * lvl, 4.0));
                     ui.painter().rect_filled(meter, 2.0, if lvl > 0.95 { RED } else { ACID });
                 } else {
+                    p.line_segment(
+                        [pos2(r.left() + 16.0, r.center().y), pos2(r.right() - 16.0, r.center().y)],
+                        stroke(1.0, alpha(RED, 0.35)),
+                    );
                     p.text(
-                        r.center(),
+                        r.center() - vec2(0.0, 18.0),
                         Align2::CENTER_CENTER,
                         "What you record shows up here",
                         body(12.0),
