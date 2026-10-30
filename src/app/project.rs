@@ -49,6 +49,7 @@ impl SolarumApp {
                 }
             }
             Action::Settings => self.settings = true,
+            Action::Luna => self.luna_open = true,
             Action::Help => self.help = true,
             Action::Sounds => self.lib_ui.show_for(None),
         }

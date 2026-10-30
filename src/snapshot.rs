@@ -23,14 +23,14 @@ mod tests {
         snap.save(&shapes, Path::new(&format!("target/snapshots/{name}.png")));
     }
 
-    /// The settings at the top: Luna's level and skins
+    /// Luna's window: its level, stardust and skins
     #[test]
     #[ignore]
-    fn render_settings_luna() {
+    fn render_luna_window() {
         let mut snap = Offscreen::retina(1360.0, 860.0, 2.0);
         crate::theme::install(&snap.ctx);
         let mut app = SolarumApp::headless(Song::default(), View::Orbit, false);
-        app.settings = true;
+        app.luna_open = true;
         app.luna = crate::luna::Luna {
             dust: 1100,
             antenna: 2,
@@ -42,7 +42,7 @@ mod tests {
         for t in 0..4 {
             shapes = snap.frame(t as f64 * 0.05, |ctx| app.ui(ctx));
         }
-        snap.save(&shapes, Path::new("target/snapshots/settings_luna.png"));
+        snap.save(&shapes, Path::new("target/snapshots/luna_window.png"));
     }
 
     /// The settings, scrolled down to the support card at the bottom
@@ -483,5 +483,33 @@ mod tests {
                 });
         });
         snap.save(&shapes, Path::new("target/snapshots/icon.png"));
+    }
+
+    /// Every antenna (rows) with every extra (columns), in the colours
+    #[test]
+    #[ignore]
+    fn render_luna_skins() {
+        use eframe::egui::{pos2, vec2, Color32};
+        let mut snap = Offscreen::retina(900.0, 640.0, 2.0);
+        let shapes = snap.frame(0.4, |ctx| {
+            eframe::egui::CentralPanel::default()
+                .frame(eframe::egui::Frame::new().fill(Color32::from_rgb(10, 10, 14)))
+                .show(ctx, |ui| {
+                    for a in 0..4u8 {
+                        for e in 0..4u8 {
+                            let luna = crate::luna::Luna {
+                                antenna: a,
+                                extra: e,
+                                color: (a + e) % 5,
+                                ..Default::default()
+                            };
+                            let c = pos2(130.0 + e as f32 * 210.0, 95.0 + a as f32 * 150.0);
+                            luna.draw(ui.painter(), c, 56.0, 0.4, 1.0, 0.6);
+                        }
+                    }
+                    let _ = vec2(0.0, 0.0);
+                });
+        });
+        snap.save(&shapes, Path::new("target/snapshots/luna_skins.png"));
     }
 }

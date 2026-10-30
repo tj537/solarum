@@ -7,7 +7,7 @@
 
 use crate::theme::*;
 use crate::widgets::glow;
-use eframe::egui::{self, pos2, vec2, Color32, Pos2, Rect, Shape};
+use eframe::egui::{self, pos2, vec2, Color32, Pos2, Rect, Shape, Stroke};
 use serde::{Deserialize, Serialize};
 use std::f32::consts::{PI, TAU};
 
@@ -75,7 +75,7 @@ pub const COLORS: [(&str, usize, Color32); 5] = [
     ("Plasma", 10, Color32::from_rgb(190, 140, 255)),
 ];
 /// The extras: name and level (0 = none)
-pub const EXTRAS: [(&str, usize); 4] = [("None", 1), ("Shades", 4), ("Headphones", 7), ("Crown", 10)];
+pub const EXTRAS: [(&str, usize); 4] = [("None", 1), ("Shades", 4), ("Glow sticks", 7), ("Crown", 10)];
 
 /// New lines Luna drops into the log from a level on
 const LINES: [(usize, &str); 12] = [
@@ -85,7 +85,7 @@ const LINES: [(usize, &str); 12] = [
     (4, "Can't see a thing in these. Don't care. Looking fresh."),
     (5, "Halfway to the stars, brother. Keep cooking."),
     (6, "I literally have a star on my head. Main character."),
-    (7, "Headphones on. Now I hear the hi-hats breathing."),
+    (7, "Glow sticks up! The whole galaxy can see me now."),
     (7, "Real talk, you made me who I am. Respect."),
     (8, "Gold edition Luna. Limited drop. Only one exists."),
     (9, "Satellite dish online. Picking up raves from three galaxies."),
@@ -307,44 +307,36 @@ impl Luna {
         p.line_segment([c + vec2(0.0, 0.39 * s), body.center_top()], line);
         let head = Rect::from_center_size(c, vec2(s, 0.78 * s));
         p.rect_stroke(head, 0.16 * s, line, egui::StrokeKind::Middle);
-        let headphones = self.extra == 2;
-        // Ears (big cups with headphones on)
+        // Ears
         for side in [-1.0, 1.0] {
-            let size = if headphones {
-                vec2(0.16 * s, 0.36 * s)
-            } else {
-                vec2(0.1 * s, 0.26 * s)
-            };
-            let ear = Rect::from_center_size(c + vec2(side * (0.56 + if headphones { 0.03 } else { 0.0 }) * s, 0.0), size);
-            p.rect_filled(ear, 0.04 * s, ink.gamma_multiply(if headphones { 1.0 } else { 0.7 }));
-        }
-        if headphones {
-            let band: Vec<Pos2> = (0..=20)
-                .map(|i| {
-                    let a = PI + PI * i as f32 / 20.0;
-                    c + vec2(a.cos() * 0.6 * s, a.sin() * 0.56 * s - 0.04 * s)
-                })
-                .collect();
-            p.add(Shape::line(band, stroke(3.0, ink)));
+            let ear = Rect::from_center_size(c + vec2(side * 0.56 * s, 0.0), vec2(0.1 * s, 0.26 * s));
+            p.rect_filled(ear, 0.03 * s, ink.gamma_multiply(0.7));
         }
         self.draw_antenna(p, head, s, t, ink);
         if self.extra == 3 {
-            // a little crown on top, around the antenna
-            let base = head.top() - 0.02 * s;
-            let w = 0.5 * s;
-            let pts = [
-                pos2(c.x - w / 2.0, base),
-                pos2(c.x - w / 2.0, base - 0.18 * s),
-                pos2(c.x - w / 4.0, base - 0.08 * s),
-                pos2(c.x, base - 0.22 * s),
-                pos2(c.x + w / 4.0, base - 0.08 * s),
-                pos2(c.x + w / 2.0, base - 0.18 * s),
-                pos2(c.x + w / 2.0, base),
-            ];
-            p.add(Shape::convex_polygon(pts[..].to_vec(), ink.gamma_multiply(0.35), stroke(1.5, ink)));
-            for x in [-0.25, 0.0, 0.25] {
-                let y = if x == 0.0 { 0.22 } else { 0.18 };
-                p.circle_filled(pos2(c.x + x * w * 2.0, base - y * s), 0.035 * s, ink);
+            // a crown on top: a band and three points, a jewel on each
+            let base = head.top() + 0.03 * s;
+            let w = 0.78 * s;
+            let band = Rect::from_min_max(pos2(c.x - w / 2.0, base - 0.12 * s), pos2(c.x + w / 2.0, base));
+            let top = band.top();
+            for (x, h) in [(-0.5f32, 0.26f32), (0.0, 0.36), (0.5, 0.26)] {
+                let px = c.x + x * (w - 0.16 * s);
+                let tri = vec![
+                    pos2(px - 0.15 * s, top + 0.01 * s),
+                    pos2(px + 0.15 * s, top + 0.01 * s),
+                    pos2(px, top - h * s),
+                ];
+                p.add(Shape::convex_polygon(tri, ink, Stroke::NONE));
+                glow(p, pos2(px, top - h * s), 0.05 * s, ink, 0.6);
+                p.circle_filled(
+                    pos2(px, top - h * s),
+                    0.045 * s,
+                    Color32::WHITE.gamma_multiply(0.9 * fade.clamp(0.0, 1.0)),
+                );
+            }
+            p.rect_filled(band, 0.03 * s, ink);
+            for x in [-0.25f32, 0.0, 0.25] {
+                p.circle_filled(pos2(c.x + x * w, band.center().y), 0.035 * s, Color32::BLACK.gamma_multiply(0.55));
             }
         }
         // Eyes: blink now and then – or shades
@@ -383,6 +375,23 @@ impl Luna {
         let hand_l = shoulder_l + vec2(-0.2 * s, 0.26 * s);
         p.line_segment([shoulder_l, hand_l], line);
         p.circle_stroke(hand_l, 0.06 * s, line);
+        if self.extra == 2 {
+            // a glow stick in each hand, swinging with the arm – one in Luna's colour, one in its
+            // opposite
+            let other = Color32::from_rgb(255 - ink.r() / 2, 255 - ink.g() / 2, 255 - ink.b() / 3).gamma_multiply(fade.clamp(0.0, 1.0));
+            for (hand, from, col, swing) in [
+                (hand_r, shoulder_r, ink, (t * 7.0).sin() * 0.3),
+                (hand_l, shoulder_l, other, (t * 3.0).sin() * 0.25),
+            ] {
+                let dir = (hand - from).normalized();
+                let a = dir.y.atan2(dir.x) + swing;
+                let d = vec2(a.cos(), a.sin()) * 0.3 * s;
+                let (a0, a1) = (hand - d * 0.45, hand + d);
+                p.line_segment([a0, a1], stroke(0.2 * s, col.gamma_multiply(0.18)));
+                p.line_segment([a0, a1], stroke(0.1 * s, col));
+                p.line_segment([a0 + d * 0.1, a1 - d * 0.1], stroke(0.035 * s, Color32::WHITE.gamma_multiply(0.7)));
+            }
+        }
     }
 
     fn draw_antenna(&self, p: &egui::Painter, head: Rect, s: f32, t: f32, ink: Color32) {
@@ -403,35 +412,39 @@ impl Luna {
                     light(tip, ((t * 2.5).fract() < 0.5) == (k == 0));
                 }
             }
-            // a star that turns slowly
+            // a big star that turns slowly and shines
             2 => {
-                let tip = root - vec2(0.0, 0.26 * s);
-                p.line_segment([root, tip + vec2(0.0, 0.08 * s)], line);
-                glow(p, tip, 0.12 * s, ink, 0.5 + 0.3 * (t * 3.0).sin().abs());
+                let tip = root - vec2(0.0, 0.34 * s);
+                p.line_segment([root, tip], line);
+                glow(p, tip, 0.14 * s, ink, 0.2 + 0.15 * (t * 3.0).sin().abs());
                 let pts: Vec<Pos2> = (0..10)
                     .map(|i| {
                         let a = t * 0.8 + i as f32 * TAU / 10.0 - PI / 2.0;
-                        let r = if i % 2 == 0 { 0.13 } else { 0.055 } * s;
+                        let r = if i % 2 == 0 { 0.24 } else { 0.1 } * s;
                         tip + vec2(a.cos(), a.sin()) * r
                     })
                     .collect();
-                p.add(Shape::closed_line(pts, stroke(1.5, ink)));
+                for i in 0..10 {
+                    p.add(Shape::convex_polygon(vec![tip, pts[i], pts[(i + 1) % 10]], ink, Stroke::NONE));
+                }
+                p.circle_filled(tip, 0.04 * s, Color32::WHITE.gamma_multiply(0.8));
             }
-            // a satellite dish, scanning left and right
+            // a satellite dish on a mast, tilting left and right, its feed blinking
             3 => {
-                let tip = root - vec2(0.0, 0.2 * s);
-                p.line_segment([root, tip], line);
-                let look = (t * 1.2).sin() * 0.5;
-                let dish: Vec<Pos2> = (0..=12)
+                let mid = root - vec2(0.0, 0.3 * s);
+                p.line_segment([root, mid + vec2(0.0, 0.04 * s)], line);
+                let tilt = -0.35 + 0.3 * (t * 1.2).sin();
+                let turn = |v: egui::Vec2| vec2(v.x * tilt.cos() - v.y * tilt.sin(), v.x * tilt.sin() + v.y * tilt.cos());
+                let bowl: Vec<Pos2> = (0..=16)
                     .map(|i| {
-                        let a = -PI / 2.0 + look + (i as f32 / 12.0 - 0.5) * 2.2;
-                        tip + vec2(a.cos(), a.sin()) * 0.16 * s + vec2(0.0, 0.1 * s)
+                        let a = PI * i as f32 / 16.0;
+                        mid + turn(vec2(a.cos() * 0.26 * s, a.sin() * 0.12 * s))
                     })
                     .collect();
-                p.add(Shape::line(dish, stroke(2.0, ink)));
-                let aim = tip + vec2(look.sin(), -look.cos().abs()) * 0.16 * s;
-                p.line_segment([tip, aim], stroke(1.0, ink));
-                light(aim, (t * 1.5).fract() < 0.5);
+                p.add(Shape::convex_polygon(bowl, ink.gamma_multiply(0.55), stroke(1.5, ink)));
+                let feed = mid + turn(vec2(0.0, -0.2 * s));
+                p.line_segment([mid, feed], stroke(1.5, ink));
+                light(feed, (t * 1.5).fract() < 0.5);
             }
             // the classic: one, blinking
             _ => {

@@ -225,6 +225,8 @@ pub struct SolarumApp {
     song_fallback: Song,
     /// The settings window is open
     pub settings: bool,
+    /// Luna's window (its level and skin)
+    pub luna_open: bool,
     /// Visualizer: the whole window is a light show
     pub visual: bool,
     /// …and it's the face, not the lights
@@ -482,6 +484,7 @@ impl SolarumApp {
             visual: false,
             face: false,
             settings: false,
+            luna_open: false,
             solo: None,
             preview: None,
             update_rx: None,
@@ -852,6 +855,7 @@ impl SolarumApp {
                 self.home_action(a, now);
             }
             self.settings_window(ctx);
+            self.luna_window(ctx);
             self.help_window(ctx);
             self.unsaved_window(ctx, now);
             self.finish_frame(now);
@@ -963,6 +967,7 @@ impl SolarumApp {
         self.export_window(ctx, now);
         self.rename_window(ctx);
         self.settings_window(ctx);
+        self.luna_window(ctx);
         self.help_window(ctx);
         self.unsaved_window(ctx, now);
         self.finish_frame(now);
@@ -1028,7 +1033,7 @@ impl SolarumApp {
                 open = resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked();
             });
         if open {
-            self.settings = true;
+            self.luna_open = true;
             self.luna_up = None;
         }
     }

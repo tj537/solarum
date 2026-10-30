@@ -31,6 +31,8 @@ pub enum Action {
     Help,
     /// The SOUNDS screen: your library
     Sounds,
+    /// Luna's window: its level and skin
+    Luna,
 }
 
 /// Read the recent projects (their grooves for the pictures, and when they were saved)
@@ -225,7 +227,7 @@ pub fn home(
         .on_hover_text("Play, breed and keep sounds for stardust – click to dress Luna up")
         .clicked()
     {
-        action = Some(Action::Settings);
+        action = Some(Action::Luna);
     }
 
     // The left: the name, then the buttons

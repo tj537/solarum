@@ -185,6 +185,8 @@ impl SolarumApp {
             self.live_controls(ui, live, now, w, tall, energy_h, filter_h, bh, drop_h);
         }
         if self.luna_desk {
+            // as far from DROP as SOLAR OS is from the tracks on the left
+            ui.add_space(16.0 - gap);
             let rest = ui.available_height() - gap;
             if rest >= 70.0 {
                 // it takes what's left, down to the bottom like SOLAR OS on the left
@@ -204,10 +206,21 @@ impl SolarumApp {
         let luna = self.luna;
         let ink = luna.ink();
         let t = now as f32;
-        p.rect_filled(screen, 10.0, mix(BG, Color32::BLACK, 0.55));
-        if hot {
-            p.rect_stroke(screen, 10.0, stroke(1.0, alpha(ink, 0.6)), egui::StrokeKind::Inside);
-        }
+        // the same glass as SOLAR OS: dark, a faint rim, a diagonal sheen
+        p.rect_filled(screen, 10.0, Color32::from_black_alpha(130));
+        p.rect_stroke(
+            screen,
+            10.0,
+            stroke(1.0, if hot { alpha(ink, 0.6) } else { mix(PANEL, ACID, 0.18) }),
+            egui::StrokeKind::Inside,
+        );
+        let sheen = vec![
+            screen.left_top() + vec2(screen.width() * 0.62, 0.0),
+            screen.left_top() + vec2(screen.width() * 0.74, 0.0),
+            screen.left_top() + vec2(screen.width() * 0.34, screen.height()),
+            screen.left_top() + vec2(screen.width() * 0.22, screen.height()),
+        ];
+        p.add(egui::Shape::convex_polygon(sheen, Color32::from_white_alpha(1), egui::Stroke::NONE));
         // to the beat while it plays, a slow sway when it doesn't
         let playing = self.playing();
         let beat = if playing {
@@ -256,7 +269,7 @@ impl SolarumApp {
             .on_hover_text("Luna – click to dress it up")
             .clicked()
         {
-            self.settings = true;
+            self.luna_open = true;
         }
     }
 
