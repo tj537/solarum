@@ -496,7 +496,7 @@ mod tests {
                 .frame(eframe::egui::Frame::new().fill(Color32::from_rgb(10, 10, 14)))
                 .show(ctx, |ui| {
                     for a in 0..5u8 {
-                        for e in 0..4u8 {
+                        for e in 0..3u8 {
                             let luna = crate::luna::Luna {
                                 antenna: a,
                                 extra: e,

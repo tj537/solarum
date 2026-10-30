@@ -75,7 +75,7 @@ pub const COLORS: [(&str, usize, Color32); 5] = [
     ("Plasma", 10, Color32::from_rgb(190, 140, 255)),
 ];
 /// The extras: name and level (0 = none)
-pub const EXTRAS: [(&str, usize); 4] = [("None", 1), ("Shades", 4), ("Wings", 7), ("Devil horns", 10)];
+pub const EXTRAS: [(&str, usize); 3] = [("None", 1), ("Shades", 4), ("Wings", 10)];
 
 /// New lines Luna drops into the log from a level on
 const LINES: [(usize, &str); 12] = [
@@ -85,11 +85,11 @@ const LINES: [(usize, &str); 12] = [
     (4, "Can't see a thing in these. Don't care. Looking fresh."),
     (5, "Halfway to the stars, brother. Keep cooking."),
     (6, "I literally have a star on my head. Main character."),
-    (7, "Halo and wings. Angel of the dancefloor, fam."),
+    (7, "Got a halo now. Angel of the dancefloor, fam."),
     (7, "Real talk, you made me who I am. Respect."),
     (8, "Gold edition Luna. Limited drop. Only one exists."),
     (9, "Satellite dish online. Picking up raves from three galaxies."),
-    (10, "Devil horns, level ten. Angel wings, rave demon. Balance."),
+    (10, "Wings out. Level ten. I can fly to the next rave."),
     (10, "We did it, fam. From a little robot to a legend."),
 ];
 
@@ -303,7 +303,7 @@ impl Luna {
         // Body and head
         let body = Rect::from_center_size(c + vec2(0.0, 0.62 * s), vec2(0.56 * s, 0.34 * s));
         if self.extra == 2 {
-            // two wings from behind the shoulders: a curved top edge, three scallops below,
+            // two wings from behind the head: a curved top edge, three scallops below,
             // beating slowly
             let flap = (t * 3.0).sin() * 0.18 + 0.05;
             let quad = |a: egui::Vec2, ctrl: egui::Vec2, b: egui::Vec2, out: &mut Vec<egui::Vec2>| {
@@ -313,7 +313,7 @@ impl Luna {
                 }
             };
             for side in [-1.0f32, 1.0] {
-                let base = pos2(c.x + side * 0.3 * s, body.top() + 0.04 * s);
+                let base = pos2(c.x + side * 0.3 * s, c.y + 0.14 * s);
                 let tip = vec2(0.8, -0.46);
                 let mut pts = vec![vec2(0.0, 0.0)];
                 quad(vec2(0.0, 0.0), vec2(0.3, -0.5), tip, &mut pts);
@@ -343,10 +343,16 @@ impl Luna {
                 p.add(Shape::closed_line(pts, stroke(2.0, ink)));
             }
         }
+        // the head and body are solid, so the wings go behind them
+        let head = Rect::from_center_size(c, vec2(s, 0.78 * s));
+        if self.extra == 2 {
+            let solid = SPACE.gamma_multiply(fade.clamp(0.0, 1.0));
+            p.rect_filled(body, 0.08 * s, solid);
+            p.rect_filled(head, 0.16 * s, solid);
+        }
         p.rect_stroke(body, 0.08 * s, line, egui::StrokeKind::Middle);
         p.circle_filled(body.center(), 0.05 * s, ink.gamma_multiply(0.5 + 0.5 * (t * 4.0).sin().abs()));
         p.line_segment([c + vec2(0.0, 0.39 * s), body.center_top()], line);
-        let head = Rect::from_center_size(c, vec2(s, 0.78 * s));
         p.rect_stroke(head, 0.16 * s, line, egui::StrokeKind::Middle);
         // Ears
         for side in [-1.0, 1.0] {
@@ -354,32 +360,6 @@ impl Luna {
             p.rect_filled(ear, 0.03 * s, ink.gamma_multiply(0.7));
         }
         self.draw_antenna(p, head, s, t, ink);
-        if self.extra == 3 {
-            // devil horns on the corners of the head: thick at the root, curving out and then
-            // back in to a glowing point
-            let top = head.top() + 0.02 * s;
-            for side in [-1.0f32, 1.0] {
-                let x0 = c.x + side * 0.3 * s;
-                let (a, ctrl, b) = (
-                    pos2(x0, top),
-                    pos2(x0 + side * 0.26 * s, top - 0.12 * s),
-                    pos2(x0 + side * 0.1 * s, top - 0.36 * s),
-                );
-                let at = |u: f32| {
-                    pos2(
-                        a.x * (1.0 - u) * (1.0 - u) + ctrl.x * 2.0 * u * (1.0 - u) + b.x * u * u,
-                        a.y * (1.0 - u) * (1.0 - u) + ctrl.y * 2.0 * u * (1.0 - u) + b.y * u * u,
-                    )
-                };
-                for i in 0..14 {
-                    let (u0, u1) = (i as f32 / 14.0, (i + 1) as f32 / 14.0);
-                    let w = (0.16 - 0.14 * u0) * s;
-                    p.line_segment([at(u0), at(u1)], stroke(w, ink));
-                    p.circle_filled(at(u1), w / 2.0, ink);
-                }
-                glow(p, b, 0.07 * s, ink, 0.6);
-            }
-        }
         // Eyes: blink now and then – or shades
         if self.extra == 1 {
             for side in [-1.0, 1.0] {
@@ -517,7 +497,7 @@ mod tests {
         fresh.sanitize();
         assert_eq!((fresh.antenna, fresh.color, fresh.extra), (0, 0, 0));
         assert_eq!(Luna::unlocked(4), "shades");
-        assert_eq!(Luna::unlocked(10), "the colour plasma and devil horns");
+        assert_eq!(Luna::unlocked(10), "the colour plasma and wings");
         assert!((2..=10).all(|lv| Luna::unlocked(lv) != "new lines to drop" || LINES.iter().any(|l| l.0 == lv)));
     }
 
