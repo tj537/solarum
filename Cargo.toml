@@ -1,6 +1,6 @@
 [package]
 name = "solarum"
-version = "0.10.0"
+version = "0.10.1"
 edition = "2021"
 # Checked with `cargo +1.96 check --all-targets` (1.95 fails: it can't infer the slice
 # types in gen.rs's tables)
