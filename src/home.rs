@@ -147,58 +147,82 @@ pub fn home(
     crate::planets::sun_ball(&p, sun, rs, warm, 0.0, shine, t);
     sun_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
 
-    // Luna circles the sun like a little moon, its level under it; a click dresses it up
-    let orbit = vec2(rs * 2.05, rs * 1.32);
-    let path: Vec<egui::Pos2> = (0..=72)
-        .map(|i| {
-            let a = i as f32 / 72.0 * std::f32::consts::TAU;
-            sun + vec2(a.cos() * orbit.x, a.sin() * orbit.y)
-        })
-        .collect();
-    p.add(egui::Shape::dashed_line(&path, stroke(1.0, alpha(TEXT, 0.1)), 4.0, 6.0));
-    let a = t * 0.1 + 2.3;
-    let ls = (rs * 0.36).clamp(26.0, 40.0);
-    let lc = sun + vec2(a.cos() * orbit.x, a.sin() * orbit.y);
-    let luna_resp = ui.interact(
-        Rect::from_center_size(lc + vec2(0.0, ls * 0.3), vec2(ls * 2.4, ls * 2.6)),
-        ui.id().with("home_luna"),
-        Sense::click(),
-    );
+    // Luna, bottom right: dancing a little, its level and what comes next; a click dresses it up
+    let card = Rect::from_min_size(pos2(content.right() - 340.0, full.bottom() - 60.0 - 136.0), vec2(340.0, 136.0));
+    let luna_resp = ui.interact(card, ui.id().with("home_luna"), Sense::click());
     let hot = luna_resp.hovered();
     let ink = luna.ink();
-    let moon = lc + vec2(0.0, ls * 0.2);
-    p.circle_filled(moon, ls * 1.25, alpha(SPACE, 0.92));
-    p.circle_stroke(
-        moon,
-        ls * 1.25,
-        stroke(if hot { 2.0 } else { 1.0 }, alpha(ink, if hot { 0.9 } else { 0.45 })),
+    p.rect_stroke(
+        card.expand(3.0),
+        17.0,
+        stroke(5.0, alpha(ink, if hot { 0.22 } else { 0.08 })),
+        egui::StrokeKind::Inside,
     );
-    // the level's progress as an arc round the moon
-    let (into, _) = luna.progress();
-    let arc: Vec<egui::Pos2> = (0..=40)
-        .map(|i| {
-            let a = -std::f32::consts::FRAC_PI_2 + i as f32 / 40.0 * into * std::f32::consts::TAU;
-            moon + vec2(a.cos(), a.sin()) * (ls * 1.25 + 4.0)
-        })
-        .collect();
-    if into > 0.0 {
-        p.add(egui::Shape::line(arc, stroke(2.5, ink)));
-    }
-    luna.draw(&p, lc, ls, t, 1.0, if hot { (t * 6.0).sin() * 0.5 + 0.5 } else { 0.0 });
-    let tag = p.layout_no_wrap(format!("LV {}", luna.level()), bold(10.0), BG);
-    let tag_r = Rect::from_center_size(moon + vec2(0.0, ls * 1.25 + 12.0), tag.size() + vec2(12.0, 5.0));
-    p.rect_filled(tag_r, tag_r.height() / 2.0, ink);
-    p.galley(tag_r.center() - tag.size() / 2.0, tag, BG);
-    let dust = match luna.progress().1 {
-        Some(n) => format!("{} / {n} stardust", luna.dust),
-        None => format!("{} stardust – all unlocked", luna.dust),
+    p.rect_filled(card, 14.0, alpha(SPACE, 0.92));
+    p.rect_stroke(
+        card,
+        14.0,
+        stroke(1.5, alpha(ink, if hot { 1.0 } else { 0.55 })),
+        egui::StrokeKind::Inside,
+    );
+    // a little dance: it bobs to the beat, leans, and waves now and then (all the time on hover)
+    let beat = (t * 2.2 * std::f32::consts::PI).sin();
+    let lc = pos2(
+        card.left() + 70.0 + (t * 1.1).sin() * 3.0,
+        card.center().y - 14.0 - beat.abs() * 5.0,
+    );
+    let wave = if hot {
+        (t * 6.0).sin() * 0.5 + 0.5
+    } else {
+        ((t % 5.0 - 4.0).max(0.0) * std::f32::consts::TAU).sin().abs()
     };
+    crate::face::halo(&p, lc, 52.0, ink, if hot { 0.4 } else { 0.25 });
+    for i in 0..5 {
+        // sparks of stardust drifting up around it
+        let k = i as f32;
+        let f = (t * 0.35 + k * 0.21).fract();
+        let x = lc.x - 40.0 + crate::widgets::hash(i * 3 + 1) * 80.0 + (t * 2.0 + k).sin() * 4.0;
+        let y = card.bottom() - 12.0 - f * (card.height() - 24.0);
+        p.text(
+            pos2(x, y),
+            Align2::CENTER_CENTER,
+            ph::SPARKLE,
+            body(9.0 + k),
+            alpha(ink, (1.0 - f) * 0.6),
+        );
+    }
+    luna.draw(&p, lc, 46.0, t, 1.0, wave);
+    let shadow = Rect::from_center_size(pos2(lc.x, card.bottom() - 16.0), vec2(44.0 - beat.abs() * 8.0, 5.0));
+    p.rect_filled(shadow, 3.0, alpha(ink, 0.18));
+
+    let x = card.left() + 140.0;
+    let w = card.right() - 18.0 - x;
+    let lv = luna.level();
+    p.text(pos2(x, card.top() + 24.0), Align2::LEFT_CENTER, "LUNA", bold(11.0), alpha(ink, 0.9));
+    p.text(
+        pos2(x, card.top() + 48.0),
+        Align2::LEFT_CENTER,
+        format!("Level {lv}"),
+        bold(22.0),
+        TEXT,
+    );
+    let (into, next) = luna.progress();
+    let bar = Rect::from_min_size(pos2(x, card.top() + 70.0), vec2(w, 7.0));
+    p.rect_filled(bar, 3.5, PANEL_HI);
+    p.rect_filled(Rect::from_min_size(bar.min, vec2(bar.width() * into, bar.height())), 3.5, ink);
+    let (dust, coming) = match next {
+        Some(n) => (
+            format!("{} {} / {n}", ph::SPARKLE, luna.dust),
+            format!("Next: {}", crate::luna::Luna::unlocked(lv + 1)),
+        ),
+        None => (format!("{} {}", ph::SPARKLE, luna.dust), "Everything unlocked".to_owned()),
+    };
+    p.text(pos2(x, card.top() + 92.0), Align2::LEFT_CENTER, dust, bold(12.0), ink);
+    let coming = fit_text(&p, &coming, body(12.0), w);
+    p.text(pos2(x, card.top() + 112.0), Align2::LEFT_CENTER, coming, body(12.0), DIM);
     if luna_resp
         .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .on_hover_text(format!(
-            "Luna · level {} · {dust}\nPlay, breed and keep sounds to level up – click to dress Luna up",
-            luna.level()
-        ))
+        .on_hover_text("Play, breed and keep sounds for stardust – click to dress Luna up")
         .clicked()
     {
         action = Some(Action::Settings);
