@@ -313,7 +313,7 @@ impl Luna {
                 }
             };
             for side in [-1.0f32, 1.0] {
-                let base = pos2(c.x + side * 0.3 * s, c.y + 0.14 * s);
+                let base = pos2(c.x + side * 0.3 * s, c.y + 0.3 * s);
                 let tip = vec2(0.8, -0.46);
                 let mut pts = vec![vec2(0.0, 0.0)];
                 quad(vec2(0.0, 0.0), vec2(0.3, -0.5), tip, &mut pts);
