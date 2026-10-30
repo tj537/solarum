@@ -611,6 +611,181 @@ pub fn template(v: Voice) -> Drawing {
     }
 }
 
+// ───────────────────────────── Bred sounds ─────────────────────────────
+
+/// A sound as a handful of genes – bred, not drawn: you pick the one you like, and its
+/// children come out a little different. They become a drawing, so a bred sound can still be
+/// painted over.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Genes {
+    /// The wave, as in `Drawing::wave`
+    pub wave: u8,
+    /// Seconds
+    pub length: f32,
+    /// The pitch at the start and the one it falls (or rises) to, 0 … 1 like a drawing
+    pub start: f32,
+    pub end: f32,
+    /// How fast it gets there (0.5 = slowly, 30 = at once)
+    pub fall: f32,
+    /// A wobble in the pitch: how deep (0 … 0.15) and how many times over the sound
+    pub wobble: f32,
+    pub rate: f32,
+    /// How it comes in (share of the length) and dies away (0 = holds, 14 = snaps shut)
+    pub attack: f32,
+    pub decay: f32,
+    /// Quick slaps at the start, like a clap (1 = one hit)
+    pub hits: u8,
+    /// Holes cut into the tail, 0 (none) … 0.7 (stuttering)
+    pub chop: f32,
+}
+
+impl Genes {
+    /// Where every track's family starts: close to its template
+    pub fn of(v: Voice) -> Genes {
+        let g = |wave, length, start, end, fall, attack, decay, hits| Genes {
+            wave,
+            length,
+            start,
+            end,
+            fall,
+            wobble: 0.0,
+            rate: 6.0,
+            attack,
+            decay,
+            hits,
+            chop: 0.0,
+        };
+        match v {
+            Voice::Kick => g(0, 0.5, 0.49, 0.07, 14.0, 0.0, 3.0, 1),
+            Voice::Clap => g(2, 0.35, 0.78, 0.78, 4.0, 0.0, 6.0, 3),
+            Voice::Rim => g(1, 0.12, 0.64, 0.6, 8.0, 0.0, 9.0, 1),
+            Voice::Hat => g(2, 0.08, 0.98, 0.97, 4.0, 0.0, 10.0, 1),
+            Voice::OpenHat => g(2, 0.45, 0.96, 0.95, 4.0, 0.0, 4.0, 1),
+            Voice::Ride => g(2, 1.4, 0.9, 0.86, 1.0, 0.0, 3.0, 1),
+            Voice::Bass => g(0, 0.4, 0.2, 0.18, 20.0, 0.02, 1.0, 1),
+            Voice::Acid => g(1, 0.3, 0.45, 0.6, 1.5, 0.01, 1.5, 1),
+        }
+    }
+
+    /// A child: every gene moves a little (`amount` 0 … 1 says how far), now and then the
+    /// wave or the number of hits changes
+    pub fn child(&self, rng: &mut crate::rng::Rng, amount: f32) -> Genes {
+        let a = amount.clamp(0.0, 1.0);
+        let mut g = *self;
+        let mut nudge = |x: f32, span: f32, lo: f32, hi: f32| (x + rng.noise() * a * span).clamp(lo, hi);
+        g.start = nudge(g.start, 0.5, 0.0, 1.0);
+        g.end = nudge(g.end, 0.5, 0.0, 1.0);
+        g.attack = nudge(g.attack, 0.12, 0.0, 0.3);
+        g.chop = nudge(g.chop - 0.05 * a, 0.5, 0.0, 0.7);
+        g.wobble = nudge(g.wobble - 0.02 * a, 0.12, 0.0, 0.15);
+        // the speeds and the length move by ratios, not steps
+        let mut scale = |x: f32, octaves: f32, lo: f32, hi: f32| (x * 2f32.powf(rng.noise() * a * octaves)).clamp(lo, hi);
+        g.length = scale(g.length, 1.6, 0.05, 2.0);
+        g.fall = scale(g.fall, 3.0, 0.5, 30.0);
+        g.rate = scale(g.rate, 2.5, 1.0, 24.0);
+        g.decay = scale(g.decay.max(0.3), 2.0, 0.3, 14.0);
+        if rng.chance(a * 0.3) {
+            g.wave = rng.below(3) as u8;
+        }
+        if rng.chance(a * 0.35) {
+            g.hits = (g.hits as i32 + if rng.chance(0.5) { 1 } else { -1 }).clamp(1, 4) as u8;
+        }
+        g
+    }
+
+    /// The genes as a drawing – a line and its loudness
+    pub fn drawing(&self) -> Drawing {
+        let n = DRAW_COLUMNS;
+        let x = |i: usize| i as f32 / (n - 1) as f32;
+        let pitch = (0..n)
+            .map(|i| {
+                let t = x(i);
+                let p = self.end + (self.start - self.end) * (-t * self.fall).exp() + self.wobble * (t * self.rate * TAU).sin();
+                Some(p.clamp(0.0, 1.0))
+            })
+            .collect();
+        let slap = 0.06;
+        let level = (0..n)
+            .map(|i| {
+                let t = x(i);
+                let body = if t < self.attack {
+                    t / self.attack
+                } else {
+                    (-(t - self.attack) * self.decay).exp()
+                };
+                let mut lv = if self.hits > 1 && t < slap * self.hits as f32 {
+                    (1.0 - (t / slap).fract() * 1.6).max(0.15)
+                } else {
+                    body
+                };
+                if self.chop > 0.0 && t > 0.15 && (t * 16.0).fract() < self.chop {
+                    lv = 0.0;
+                }
+                // always let go at the very end
+                lv * ((1.0 - t) * 14.0).min(1.0)
+            })
+            .collect();
+        Drawing {
+            pitch,
+            level,
+            wave: self.wave,
+            length: self.length,
+        }
+    }
+
+    /// The biggest way this one differs from `from`, in a word ("Deeper", "Snappier" …)
+    pub fn differs(&self, from: &Genes) -> &'static str {
+        if self.wave != from.wave {
+            return ["Rounder", "Buzzier", "Airier"][self.wave.min(2) as usize];
+        }
+        if self.hits != from.hits {
+            return if self.hits > from.hits { "More hits" } else { "Fewer hits" };
+        }
+        let pitch = |g: &Genes| (g.start + g.end) * 0.5;
+        let ways = [
+            ((pitch(self) - pitch(from)) * 3.0, "Higher", "Deeper"),
+            ((self.length / from.length).log2(), "Longer", "Shorter"),
+            ((self.decay / from.decay).log2() * 0.7, "Snappier", "Softer"),
+            ((self.chop - from.chop) * 3.0, "Choppier", "Smoother"),
+            ((self.wobble - from.wobble) * 12.0, "Wobblier", "Steadier"),
+            (
+                ((self.start - self.end) - (from.start - from.end)).abs() * 2.5,
+                "Wilder drop",
+                "Wilder drop",
+            ),
+        ];
+        let (d, up, down) = ways
+            .iter()
+            .copied()
+            .max_by(|a, b| a.0.abs().total_cmp(&b.0.abs()))
+            .unwrap_or((0.0, "Close", "Close"));
+        if d.abs() < 0.08 {
+            "Close"
+        } else if d > 0.0 {
+            up
+        } else {
+            down
+        }
+    }
+}
+
+/// Four children of `parent`: two close, one a bit further, one a wild jump. Rounds go
+/// calmer as you go (`round` 0 = the first), so the family settles on what you like.
+pub fn litter(parent: &Genes, round: usize, rng: &mut crate::rng::Rng) -> [Genes; 4] {
+    let a = (0.55 * 0.75f32.powi(round as i32)).max(0.1);
+    let mut kids = [
+        parent.child(rng, a * 0.6),
+        parent.child(rng, a),
+        parent.child(rng, a * 1.4),
+        parent.child(rng, (a * 2.4).min(1.0)),
+    ];
+    // shuffled, so the wild one isn't always last
+    for i in (1..4).rev() {
+        kids.swap(i, rng.below(i as u32 + 1) as usize);
+    }
+    kids
+}
+
 // ───────────────────────────── Files ─────────────────────────────
 
 /// Any audio file → mono at `SAMPLE_SR`, at most `MAX_SECONDS`
@@ -915,6 +1090,29 @@ mod tests {
                 (t * 900.0).sin() * (-t / 0.03).exp() * 0.8 + rng.noise() * 0.001
             })
             .collect()
+    }
+
+    #[test]
+    fn bred_sounds_differ_stay_clean_and_repeat() {
+        for v in Voice::ALL {
+            let mut rng = crate::rng::Rng::new(11);
+            let mut parent = Genes::of(v);
+            for round in 0..6 {
+                let kids = litter(&parent, round, &mut rng);
+                for k in &kids {
+                    let x = render_drawing(&k.drawing());
+                    let peak = x.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+                    assert!(x.iter().all(|s| s.is_finite()) && peak <= 1.0, "{v:?} round {round}: peak {peak}");
+                    assert!(peak > 0.05, "{v:?} round {round}: silent");
+                }
+                assert!(kids.iter().any(|k| *k != parent), "{v:?}: no child changed");
+                parent = kids[round % 4];
+            }
+        }
+        // the same seed breeds the same family
+        let a = litter(&Genes::of(Voice::Kick), 0, &mut crate::rng::Rng::new(5));
+        let b = litter(&Genes::of(Voice::Kick), 0, &mut crate::rng::Rng::new(5));
+        assert_eq!(a, b);
     }
 
     #[test]

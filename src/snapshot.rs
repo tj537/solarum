@@ -295,6 +295,12 @@ mod tests {
         render("sounds_empty", 1100.0, 700.0, |app| app.lib_ui.show_for(None));
         render("sounds_start", 1360.0, 860.0, |app| app.lib_ui.show_start());
         render("sounds_record", 1360.0, 860.0, |app| app.lib_ui.show_record());
+        render("sounds_breed", 1360.0, 860.0, |app| {
+            app.lib_ui.show_breed(crate::song::Voice::Kick, 0)
+        });
+        render("sounds_breed_round", 1360.0, 860.0, |app| {
+            app.lib_ui.show_breed(crate::song::Voice::Acid, 3)
+        });
         render("sounds_template", 1360.0, 860.0, |app| {
             app.lib_ui.draw_template(crate::song::Voice::Kick)
         });

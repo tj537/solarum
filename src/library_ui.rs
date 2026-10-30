@@ -32,6 +32,8 @@ pub enum Step {
     Start,
     Draw,
     Record,
+    /// Four children of your last pick: click the best one, again and again
+    Breed,
     /// The new sound (a draft) in the editor: cut, shape, Save
     Finish(u64),
 }
@@ -50,6 +52,70 @@ enum Handle {
     FadeIn,
     FadeOut,
     Pan,
+}
+
+/// Audition ids for the four children (library ids come from the clock, never this high)
+const KID_ID: u64 = u64::MAX - 8;
+
+/// Breeding a sound: four children of your last pick, every round a little calmer
+struct Breed {
+    voice: Voice,
+    /// Your pick of every round so far – the last one is yours (none yet: the track's own)
+    picks: Vec<library::Genes>,
+    kids: [library::Genes; 4],
+    bufs: [Arc<SampleBuf>; 4],
+    rng: crate::rng::Rng,
+    /// The card the pointer is on – it plays once when the pointer gets there
+    hover: Option<usize>,
+    /// When these four came (the cards grow in)
+    born: f64,
+}
+
+fn bred_buf(g: &library::Genes) -> Arc<SampleBuf> {
+    Arc::new(SampleBuf {
+        data: library::render_drawing(&g.drawing()),
+        pitch: 0.0,
+    })
+}
+
+impl Breed {
+    fn new(voice: Voice, rng: crate::rng::Rng, now: f64) -> Breed {
+        let g = library::Genes::of(voice);
+        let mut b = Breed {
+            voice,
+            picks: Vec::new(),
+            kids: [g; 4],
+            bufs: std::array::from_fn(|_| bred_buf(&g)),
+            rng,
+            hover: None,
+            born: now,
+        };
+        b.litter(now);
+        b
+    }
+
+    fn parent(&self) -> library::Genes {
+        self.picks.last().copied().unwrap_or(library::Genes::of(self.voice))
+    }
+
+    fn litter(&mut self, now: f64) {
+        self.kids = library::litter(&self.parent(), self.picks.len(), &mut self.rng);
+        self.bufs = std::array::from_fn(|k| bred_buf(&self.kids[k]));
+        self.hover = None;
+        self.born = now;
+    }
+
+    fn pick(&mut self, k: usize, now: f64) {
+        self.picks.push(self.kids[k]);
+        self.litter(now);
+    }
+
+    /// Take the last pick back: its parent has four new children
+    fn round_back(&mut self, now: f64) {
+        if self.picks.pop().is_some() {
+            self.litter(now);
+        }
+    }
 }
 
 struct Playing {
@@ -99,6 +165,8 @@ pub struct LibraryUi {
     tool: Tool,
     /// The last column the pen was at, its value, and the lane (0 = pitch, 1 = loudness)
     pen: Option<(usize, f32, u8)>,
+    /// Breeding a sound (the Breed step, kept for Back from Finish)
+    breed: Option<Breed>,
     /// Making a new sound (`None`: the library), and the step Back goes to from Finish
     flow: Option<Step>,
     back_to: Step,
@@ -138,6 +206,7 @@ impl Default for LibraryUi {
             draw_redo: Vec::new(),
             tool: Tool::Pen,
             pen: None,
+            breed: None,
             flow: None,
             back_to: Step::Start,
             space: false,
@@ -387,6 +456,7 @@ impl LibraryUi {
         self.flow = Some(Step::Start);
         self.drawing = None;
         self.recorder = None;
+        self.breed = None;
     }
 
     /// A new sound is made: on to the last step, where it's cut, shaped and saved
@@ -402,15 +472,23 @@ impl LibraryUi {
         self.flow = match self.flow {
             Some(Step::Finish(id)) => {
                 lib.remove(id);
-                Some(if self.back_to == Step::Draw && self.drawing.is_none() {
-                    Step::Start
-                } else {
-                    self.back_to
-                })
+                Some(
+                    if (self.back_to == Step::Draw && self.drawing.is_none()) || (self.back_to == Step::Breed && self.breed.is_none()) {
+                        Step::Start
+                    } else {
+                        self.back_to
+                    },
+                )
             }
-            Some(Step::Draw) | Some(Step::Record) => {
+            // a drawing painted from a bred sound goes back to its family
+            Some(Step::Draw) if self.breed.is_some() => {
+                self.drawing = None;
+                Some(Step::Breed)
+            }
+            Some(Step::Draw) | Some(Step::Record) | Some(Step::Breed) => {
                 self.drawing = None;
                 self.recorder = None;
+                self.breed = None;
                 Some(Step::Start)
             }
             _ => None,
@@ -426,6 +504,35 @@ impl LibraryUi {
         self.flow = None;
         self.drawing = None;
         self.recorder = None;
+        self.breed = None;
+    }
+
+    /// Your last pick becomes a sound (a draft) – the family stays, for Back
+    fn breed_next(&mut self, lib: &mut Library, out: &mut Vec<Out>) {
+        let Some(b) = &self.breed else { return };
+        let Some(g) = b.picks.last() else { return };
+        let data = library::render_drawing(&g.drawing());
+        let base = format!("Bred {}", b.voice.name().to_lowercase());
+        let n = lib.entries.iter().filter(|e| e.name.starts_with(&base)).count() + 1;
+        let id = lib.add(&format!("{base} {n}"), b.voice, data);
+        lib.set_draft(id, true);
+        self.stop(out);
+        self.finish_with(id, Step::Breed);
+    }
+
+    /// Hear one of the bred sounds
+    fn audition(&mut self, id: u64, buf: Arc<SampleBuf>, out: &mut Vec<Out>, now: f64) {
+        out.push(Out::Audition(Some(buf.clone()), false));
+        let to = buf.data.len() as f32 / SAMPLE_SR;
+        self.playing = Some(Playing {
+            id,
+            buf,
+            from: 0.0,
+            to,
+            reverse: false,
+            whole: false,
+            since: now,
+        });
     }
 
     /// The drawing becomes a sound (a draft) – the board stays, for Back
@@ -612,6 +719,7 @@ impl LibraryUi {
                 Some(Step::Start) => self.start_page(ui, body_r, lib, blocked, &mut out, now),
                 Some(Step::Draw) => self.draw_board(ui, body_r, playhead, blocked, &mut out, now),
                 Some(Step::Record) => self.record_page(ui, body_r, lib, now),
+                Some(Step::Breed) => self.breed_page(ui, body_r, playhead, blocked, &mut out, now),
                 Some(Step::Finish(id)) if lib.get(id).is_some() => {
                     self.editor(ui, body_r, lib, slots, id, playhead, blocked, &mut out, now)
                 }
@@ -1285,6 +1393,25 @@ impl LibraryUi {
         self.open_start();
     }
 
+    /// Open the breeding step for a track, `rounds` picks in (for the snapshots)
+    #[cfg(test)]
+    pub fn show_breed(&mut self, v: Voice, rounds: usize) {
+        self.open = true;
+        self.start_breeding(v, crate::rng::Rng::new(4), 0.0);
+        if let Some(b) = self.breed.as_mut() {
+            for k in 0..rounds {
+                b.pick((k * 3 + 1) % 4, 0.0);
+            }
+            b.born = -10.0;
+        }
+    }
+
+    fn start_breeding(&mut self, voice: Voice, rng: crate::rng::Rng, now: f64) {
+        self.breed = Some(Breed::new(voice, rng, now));
+        self.drawing = None;
+        self.flow = Some(Step::Breed);
+    }
+
     fn start_drawing(&mut self, from: Option<(library::Drawing, &'static str)>, voice: Voice, template: bool) {
         let (d, name) = from.unwrap_or((library::Drawing::default(), "Drawing"));
         self.template = template.then(|| d.clone());
@@ -1316,10 +1443,70 @@ impl LibraryUi {
                 .color(DIM),
         );
         ui.add_space(10.0);
-        // From nothing: draw, record, import
         let gap = 12.0;
         let low_h = 136.0;
         let t = ui.input(|i| i.time) as f32;
+
+        // The easiest way, on top and in lime: breed one – no drawing, no knobs
+        let (br, resp) = ui.allocate_exact_size(vec2(inner.width(), 118.0), Sense::click());
+        let hot = resp.hovered() && !blocked;
+        let p = ui.painter_at(br.expand(6.0));
+        p.rect_stroke(
+            br.expand(3.0),
+            15.0,
+            stroke(5.0, alpha(ACID, if hot { 0.22 } else { 0.1 })),
+            egui::StrokeKind::Inside,
+        );
+        p.rect_filled(br, 12.0, mix(PAD, ACID, if hot { 0.14 } else { 0.07 }));
+        p.rect_stroke(br, 12.0, stroke(1.5, ACID), egui::StrokeKind::Inside);
+        let pic = Rect::from_min_size(br.min + vec2(10.0, 10.0), vec2(230.0, br.height() - 20.0));
+        p.rect_filled(pic, 9.0, SPACE);
+        family_picture(&p, pic.shrink(12.0), hot, t);
+        let x = pic.right() + 20.0;
+        let badge = p.layout_no_wrap("NEW".into(), bold(10.0), BG);
+        let badge_r = Rect::from_min_size(pos2(x, br.top() + 22.0), badge.size() + vec2(14.0, 6.0));
+        p.rect_filled(badge_r, badge_r.height() / 2.0, ACID);
+        p.galley(badge_r.center() - badge.size() / 2.0, badge, BG);
+        p.text(
+            pos2(badge_r.right() + 10.0, badge_r.center().y),
+            Align2::LEFT_CENTER,
+            "Breed a sound",
+            bold(20.0),
+            TEXT,
+        );
+        let go = p.layout_no_wrap(format!("Start breeding  {}", ph::ARROW_RIGHT), bold(14.0), BG);
+        let go_r = Rect::from_min_size(
+            pos2(br.right() - 22.0 - go.size().x - 36.0, br.center().y - go.size().y / 2.0 - 9.0),
+            go.size() + vec2(36.0, 18.0),
+        );
+        let sub_w = go_r.left() - x - 24.0;
+        for (k, line) in [
+            "Hear four sounds, click the one you like best – it gets four children.",
+            "A few rounds and it's yours. No drawing, no knobs.",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let line = fit_text(&p, line, body(13.0), sub_w);
+            p.text(
+                pos2(x, br.top() + 60.0 + k as f32 * 20.0),
+                Align2::LEFT_CENTER,
+                line,
+                body(13.0),
+                DIM,
+            );
+        }
+        p.rect_filled(go_r, go_r.height() / 2.0, if hot { Color32::WHITE } else { ACID });
+        p.galley(go_r.center() - go.size() / 2.0, go, BG);
+        if hot {
+            ui.ctx().request_repaint();
+        }
+        if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() && !blocked {
+            self.start_breeding(self.filter.unwrap_or(Voice::Kick), crate::rng::Rng::from_clock(), now);
+        }
+        ui.add_space(gap);
+
+        // From nothing: draw, record, import
         let bw = (inner.width() - gap * 2.0) / 3.0;
         let mut way = None;
         ui.horizontal(|ui| {
@@ -1458,11 +1645,12 @@ impl LibraryUi {
         let make = match (step, self.back_to) {
             (Step::Draw, _) | (Step::Finish(_), Step::Draw) => "Draw",
             (Step::Record, _) | (Step::Finish(_), Step::Record) => "Record",
+            (Step::Breed, _) | (Step::Finish(_), Step::Breed) => "Breed",
             _ => "Make",
         };
         let at = match step {
             Step::Start => 0,
-            Step::Draw | Step::Record => 1,
+            Step::Draw | Step::Record | Step::Breed => 1,
             Step::Finish(_) => 2,
         };
         let p = ui.painter();
@@ -1515,6 +1703,15 @@ impl LibraryUi {
                         self.draw_next(lib, out);
                     }
                 }
+                Step::Breed => {
+                    let picked = self.breed.as_ref().is_some_and(|b| !b.picks.is_empty());
+                    if pill(ui, &format!("Keep it  {}", ph::ARROW_RIGHT), picked)
+                        .on_hover_text("Your last pick becomes a sound – then cut and shape it")
+                        .clicked()
+                    {
+                        self.breed_next(lib, out);
+                    }
+                }
                 Step::Finish(id)
                     if pill(ui, &format!("{}  Save", ph::FLOPPY_DISK), true)
                         .on_hover_text("Into your sounds")
@@ -1533,6 +1730,278 @@ impl LibraryUi {
                 self.flow_back(lib, out);
             }
         });
+    }
+
+    // ───────────── Breeding ─────────────
+
+    /// Breeding: four children of your last pick – hover to hear, click the best one; on the
+    /// left the sound you have so far and its family line
+    fn breed_page(&mut self, ui: &mut Ui, r: Rect, playhead: Option<f64>, blocked: bool, out: &mut Vec<Out>, now: f64) {
+        let Some(b) = self.breed.as_ref() else { return };
+        let voice = b.voice;
+        let col = track_color(voice);
+        let round = b.picks.len();
+        let parent = b.parent();
+        let kids = b.kids;
+        let age = (now - b.born) as f32;
+        let ease = |x: f32| 1.0 - (1.0 - x.clamp(0.0, 1.0)).powi(3);
+        let playing = self.playing.as_ref().map(|pl| pl.id).zip(playhead);
+        let p = ui.painter().clone();
+        let inner = r.shrink(18.0);
+        let mut ui = ui.new_child(UiBuilder::new().max_rect(inner).layout(egui::Layout::top_down(egui::Align::Min)));
+        if blocked {
+            ui.disable();
+        }
+        ui.spacing_mut().item_spacing = vec2(8.0, 6.0);
+
+        // The round, and the track the family is for
+        let mut new_voice = None;
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(format!("Round {}", round + 1)).font(bold(26.0)).color(TEXT));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                for &v in Voice::ALL.iter().rev() {
+                    if crate::widgets::chip_sized(ui, v.name(), voice == v, track_color(v), None)
+                        .on_hover_text(format!("Breed for the {} track – a new family", v.name()))
+                        .clicked()
+                        && v != voice
+                    {
+                        new_voice = Some(v);
+                    }
+                }
+            });
+        });
+        let sub = if round == 0 {
+            "Hover a sound to hear it – click the one you like best. It gets four children."
+        } else {
+            "Your pick had four children. Click the best one again – or Keep it when you love it."
+        };
+        ui.label(egui::RichText::new(sub).font(body(13.0)).color(DIM));
+        ui.add_space(10.0);
+        let area = Rect::from_min_max(pos2(inner.left(), ui.cursor().top()), inner.max);
+        let gap = 14.0;
+        let left_w = (area.width() * 0.27).clamp(240.0, 330.0);
+        let yours = Rect::from_min_size(area.min, vec2(left_w, area.height()));
+        let grid = Rect::from_min_max(pos2(yours.right() + gap + 4.0, area.top()), area.max);
+
+        // ── The four children: they roll in, one a moment after the other ──
+        if age < 0.4 {
+            ui.ctx().request_repaint();
+        }
+        let cw = (grid.width() - gap) / 2.0;
+        let ch = (grid.height() - gap) / 2.0;
+        let mut hovered = None;
+        let mut picked = None;
+        for (k, kid) in kids.iter().enumerate() {
+            let slot = Rect::from_min_size(
+                grid.min + vec2((k % 2) as f32 * (cw + gap), (k / 2) as f32 * (ch + gap)),
+                vec2(cw, ch),
+            );
+            let resp = ui.interact(slot, ui.id().with(("bred", k)), Sense::click());
+            let hot = resp.hovered() && !blocked;
+            if hot {
+                hovered = Some(k);
+                ui.ctx().request_repaint();
+            }
+            let a = ease((age - k as f32 * 0.06) * 5.0);
+            let cr = Rect::from_center_size(slot.center(), slot.size() * (0.94 + 0.06 * a));
+            p.rect_filled(cr, 12.0, alpha(if hot { mix(PAD, col, 0.10) } else { PAD }, a));
+            p.rect_stroke(
+                cr,
+                12.0,
+                stroke(if hot { 1.5 } else { 1.0 }, alpha(if hot { col } else { LINE }, a)),
+                egui::StrokeKind::Inside,
+            );
+            // its number (the key that plays it), how it differs from your pick, how long it is
+            let num = pos2(cr.left() + 26.0, cr.top() + 26.0);
+            p.circle_filled(num, 12.0, alpha(if hot { col } else { PANEL_HI }, a));
+            p.text(
+                num,
+                Align2::CENTER_CENTER,
+                format!("{}", k + 1),
+                bold(12.0),
+                alpha(if hot { BG } else { TEXT }, a),
+            );
+            p.text(
+                pos2(num.x + 22.0, num.y),
+                Align2::LEFT_CENTER,
+                kid.differs(&parent),
+                bold(16.0),
+                alpha(TEXT, a),
+            );
+            p.text(
+                pos2(cr.right() - 18.0, num.y),
+                Align2::RIGHT_CENTER,
+                fmt_secs(kid.length),
+                body(12.0),
+                alpha(FAINT, a),
+            );
+            let win = Rect::from_min_max(pos2(cr.left() + 12.0, cr.top() + 50.0), pos2(cr.right() - 12.0, cr.bottom() - 42.0));
+            p.rect_filled(win, 9.0, alpha(SPACE, a));
+            let pic = win.shrink2(vec2(16.0, 12.0));
+            thumb_drawing(&p, pic, &kid.drawing(), alpha(col, a));
+            if let Some((_, pos)) = playing.filter(|&(id, _)| id == KID_ID + k as u64) {
+                let x = pic.left() + (pos as f32 / SAMPLE_SR / kid.length).min(1.0) * pic.width();
+                p.line_segment([pos2(x, win.top() + 6.0), pos2(x, win.bottom() - 6.0)], stroke(1.5, TEXT));
+            }
+            if round == 0 && !hot {
+                p.text(
+                    pos2(cr.left() + 16.0, cr.bottom() - 21.0),
+                    Align2::LEFT_CENTER,
+                    format!("{}  Hover to hear", ph::SPEAKER_HIGH),
+                    body(12.0),
+                    alpha(FAINT, a),
+                );
+            }
+            p.text(
+                pos2(cr.right() - 18.0, cr.bottom() - 21.0),
+                Align2::RIGHT_CENTER,
+                format!("Pick it  {}", ph::ARROW_RIGHT),
+                bold(13.0),
+                alpha(if hot { col } else { FAINT }, a),
+            );
+            if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() && !blocked {
+                picked = Some(k);
+            }
+        }
+
+        // ── Yours: the last pick, and its family line ──
+        p.rect_filled(yours, 12.0, PAD);
+        p.rect_stroke(yours, 12.0, stroke(1.0, LINE), egui::StrokeKind::Inside);
+        p.text(yours.left_top() + vec2(16.0, 22.0), Align2::LEFT_CENTER, "YOURS", bold(11.0), FAINT);
+        let win = Rect::from_min_size(
+            yours.min + vec2(12.0, 40.0),
+            vec2(yours.width() - 24.0, (yours.height() * 0.34).clamp(100.0, 200.0)),
+        );
+        let win_resp = ui.interact(win, ui.id().with("bred-yours"), Sense::click());
+        let win_hot = win_resp.hovered() && round > 0 && !blocked;
+        p.rect_filled(win, 9.0, SPACE);
+        if win_hot {
+            p.rect_stroke(win, 9.0, stroke(1.5, col), egui::StrokeKind::Inside);
+        }
+        let pic = win.shrink2(vec2(14.0, 12.0));
+        let caption = if round == 0 {
+            thumb_drawing(&p, pic, &parent.drawing(), alpha(col, 0.25));
+            p.text(win.center(), Align2::CENTER_CENTER, "Nothing picked yet", bold(14.0), DIM);
+            format!("It starts from the {} sound", voice.name().to_lowercase())
+        } else {
+            thumb_drawing(&p, pic, &parent.drawing(), col);
+            if let Some((_, pos)) = playing.filter(|&(id, _)| id == KID_ID + 4) {
+                let x = pic.left() + (pos as f32 / SAMPLE_SR / parent.length).min(1.0) * pic.width();
+                p.line_segment([pos2(x, win.top() + 6.0), pos2(x, win.bottom() - 6.0)], stroke(1.5, TEXT));
+            }
+            format!("Picked in round {round}  ·  {}", fmt_secs(parent.length))
+        };
+        p.text(
+            pos2(win.left() + 4.0, win.bottom() + 18.0),
+            Align2::LEFT_CENTER,
+            caption,
+            body(12.0),
+            DIM,
+        );
+        if round > 0 {
+            p.text(
+                pos2(win.right() - 4.0, win.bottom() + 18.0),
+                Align2::RIGHT_CENTER,
+                format!("{}  Space", ph::PLAY),
+                body(12.0),
+                if win_hot { col } else { FAINT },
+            );
+        }
+
+        // the family line: a dot for every pick, a ring for the four you're hearing now
+        let fy = win.bottom() + 58.0;
+        p.text(pos2(yours.left() + 16.0, fy), Align2::LEFT_CENTER, "FAMILY", bold(11.0), FAINT);
+        let dots_y = fy + 28.0;
+        let step = 24.0;
+        let fit = ((yours.width() - 40.0) / step) as usize;
+        let shown = (round + 1).min(fit.max(2));
+        let first = round + 1 - shown;
+        let x0 = yours.left() + 22.0;
+        for i in 0..shown {
+            let c = pos2(x0 + i as f32 * step, dots_y);
+            if i + 1 < shown {
+                p.line_segment([c, c + vec2(step, 0.0)], stroke(2.0, alpha(col, 0.45)));
+            }
+            if first + i < round {
+                p.circle_filled(c, 6.0, col);
+            } else {
+                let pulse = 7.0 + (now as f32 * 3.0).sin() * 1.0;
+                p.circle_stroke(c, pulse, stroke(2.0, col));
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
+            }
+        }
+        let gens = match round {
+            0 => "The first four – pick one".to_owned(),
+            1 => "1 pick so far".to_owned(),
+            n => format!("{n} picks so far"),
+        };
+        p.text(pos2(yours.left() + 16.0, dots_y + 26.0), Align2::LEFT_CENTER, gens, body(12.0), DIM);
+
+        // what you can do with it
+        let tools = Rect::from_min_max(pos2(yours.left() + 12.0, yours.bottom() - 128.0), yours.max - vec2(12.0, 12.0));
+        let mut paint = false;
+        let mut back = false;
+        let mut fresh = false;
+        let mut tu = ui.new_child(UiBuilder::new().max_rect(tools).layout(egui::Layout::bottom_up(egui::Align::Min)));
+        tu.spacing_mut().item_spacing.y = 8.0;
+        if chip(&mut tu, &format!("{}  New family", ph::SHUFFLE), false, TEXT)
+            .on_hover_text("Start over with four new ones")
+            .clicked()
+        {
+            fresh = true;
+        }
+        tu.add_enabled_ui(round > 0, |ui| {
+            if chip(ui, &format!("{}  One round back", ph::ARROW_COUNTER_CLOCKWISE), false, TEXT)
+                .on_hover_text("Take the last pick back (⌘Z)")
+                .clicked()
+            {
+                back = true;
+            }
+            if chip(ui, &format!("{}  Paint over it", ph::PENCIL_SIMPLE), false, TEXT)
+                .on_hover_text("Open it on the drawing board and change it by hand")
+                .clicked()
+            {
+                paint = true;
+            }
+        });
+
+        // ── What happened ──
+        if let Some(v) = new_voice {
+            self.stop(out);
+            self.start_breeding(v, crate::rng::Rng::from_clock(), now);
+            return;
+        }
+        if paint {
+            self.stop(out);
+            self.start_drawing(Some((parent.drawing(), template_name(voice))), voice, true);
+            return;
+        }
+        let Some(b) = self.breed.as_mut() else { return };
+        let mut hear = None;
+        if fresh {
+            *b = Breed::new(voice, crate::rng::Rng::from_clock(), now);
+        } else if back {
+            b.round_back(now);
+        } else if let Some(k) = picked {
+            b.pick(k, now);
+            // the pointer is still there: the new child under it waits for the next hover
+            b.hover = Some(k);
+        } else if hovered != b.hover {
+            b.hover = hovered;
+            if let Some(k) = hovered {
+                hear = Some((KID_ID + k as u64, b.bufs[k].clone()));
+            }
+        }
+        if win_resp.clicked() && round > 0 && !blocked {
+            hear = Some((KID_ID + 4, bred_buf(&parent)));
+        }
+        if fresh || back || picked.is_some() {
+            self.stop(out);
+        }
+        if let Some((id, buf)) = hear {
+            self.audition(id, buf, out, now);
+        }
     }
 
     /// Hear the drawing as it is now
@@ -1931,6 +2400,26 @@ impl LibraryUi {
                 return;
             }
             match step {
+                Step::Breed => {
+                    let digit = ui.input(|i| {
+                        [egui::Key::Num1, egui::Key::Num2, egui::Key::Num3, egui::Key::Num4]
+                            .iter()
+                            .position(|&k| i.key_pressed(k))
+                    });
+                    if let Some(b) = self.breed.as_mut() {
+                        if undo {
+                            b.round_back(now);
+                        }
+                        let hear = match digit {
+                            Some(k) => Some((KID_ID + k as u64, b.bufs[k].clone())),
+                            None if space && !b.picks.is_empty() => Some((KID_ID + 4, bred_buf(&b.parent()))),
+                            None => None,
+                        };
+                        if let Some((id, buf)) = hear {
+                            self.audition(id, buf, out, now);
+                        }
+                    }
+                }
                 Step::Draw if undo || redo => {
                     self.draw_undo_step(undo);
                     self.play_drawing(out, now);
@@ -2284,6 +2773,56 @@ fn thumb_drawing(p: &egui::Painter, r: Rect, d: &library::Drawing, col: Color32)
         .collect();
     p.add(Shape::line(pts.clone(), stroke(7.0, alpha(col, 0.15))));
     p.add(Shape::line(pts, stroke(2.5, col)));
+}
+
+/// Breeding in small: one sound, four children – on hover a spark runs to each in turn
+fn family_picture(p: &egui::Painter, r: Rect, hot: bool, t: f32) {
+    let root = pos2(r.left() + 14.0, r.center().y);
+    let lit = if hot { (t * 1.4) as usize % 4 } else { 1 };
+    let kw = 74.0;
+    for k in 0..4 {
+        let y = r.top() + r.height() * (k as f32 + 0.5) / 4.0;
+        let kr = Rect::from_center_size(pos2(r.right() - kw / 2.0, y), vec2(kw, r.height() / 4.0 - 5.0));
+        let col = if k == lit { ACID } else { track_color(Voice::ALL[k * 2 + 1]) };
+        let from = root + vec2(10.0, 0.0);
+        let to = pos2(kr.left(), y);
+        let mid = pos2((from.x + to.x) / 2.0, y);
+        let pts: Vec<Pos2> = (0..=16)
+            .map(|i| {
+                // a soft S from the parent to the child
+                let u = i as f32 / 16.0;
+                let s = u * u * (3.0 - 2.0 * u);
+                pos2(from.x + (to.x - from.x) * u, from.y + (mid.y - from.y) * s)
+            })
+            .collect();
+        p.add(Shape::line(
+            pts.clone(),
+            stroke(1.5, if k == lit { alpha(ACID, 0.7) } else { alpha(LINE, 0.8) }),
+        ));
+        if hot && k == lit {
+            let i = ((t * 1.4).fract() * 16.0) as usize;
+            p.circle_filled(pts[i.min(16)], 3.0, ACID);
+        }
+        p.rect_filled(kr, 5.0, if k == lit { alpha(ACID, 0.12) } else { PAD });
+        p.rect_stroke(
+            kr,
+            5.0,
+            stroke(1.0, if k == lit { ACID } else { alpha(LINE, 0.8) }),
+            egui::StrokeKind::Inside,
+        );
+        let w = kr.shrink2(vec2(7.0, 4.0));
+        let pts: Vec<Pos2> = (0..=24)
+            .map(|i| {
+                let u = i as f32 / 24.0;
+                let y = (u * TAU * (1.5 + k as f32 * 1.2)).sin() * (1.0 - u).powf(0.8 + k as f32 * 0.5);
+                pos2(w.left() + u * w.width(), w.center().y - y * w.height() / 2.0)
+            })
+            .collect();
+        p.add(Shape::line(pts, stroke(1.5, col)));
+    }
+    let pulse = if hot { 1.0 + (t * 5.0).sin() * 0.12 } else { 1.0 };
+    p.circle_filled(root, 13.0 * pulse, alpha(ACID, 0.15));
+    p.circle_filled(root, 8.0, ACID);
 }
 
 /// What a way to start does, as a little picture that comes alive on hover: a line being
