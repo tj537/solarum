@@ -178,6 +178,18 @@ mod tests {
     #[ignore]
     fn render_window() {
         render("orbit_stopped", 1360.0, 860.0, |_| {});
+        // Luna on the main screen, bottom right, every skin unlocked – and in a small window
+        render("luna_desk", 1360.0, 860.0, |app| {
+            app.luna_desk = true;
+            app.luna = crate::luna::Luna {
+                dust: 520,
+                antenna: 2,
+                color: 2,
+                extra: 1,
+                ..Default::default()
+            };
+        });
+        render("luna_desk_small", 1100.0, 700.0, |app| app.luna_desk = true);
         render("orbit_playing", 1360.0, 860.0, |app| {
             app.song.auto = true;
             app.slots[0] = Some(app.song);

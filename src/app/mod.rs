@@ -269,6 +269,8 @@ pub struct SolarumApp {
     pub power_at: f64,
     pub on_start: OnStart,
     pub keep_tempo: bool,
+    /// Luna on the main screen, bottom right (a setting)
+    pub luna_desk: bool,
     /// What Luna learned you like (the thumbs in SOLAR OS) – saved with the settings
     pub taste: crate::ear::Taste,
     /// Luna's stardust and skin – saved with the settings
@@ -377,12 +379,15 @@ impl SolarumApp {
         let get = |key: &str| cc.storage.and_then(|s| eframe::get_value::<bool>(s, key));
         app.log.facts = get("log_facts").unwrap_or(true);
         app.keep_tempo = get("keep_tempo").unwrap_or(false);
+        app.luna_desk = get("luna_desk").unwrap_or(false);
         app.taste = cc.storage.and_then(|s| eframe::get_value(s, "taste")).unwrap_or_default();
         app.send(Cmd::Taste(app.taste));
         app.luna_path = crate::luna::Luna::path();
         let file = app.luna_path.as_deref().and_then(crate::luna::Luna::load);
         app.luna = crate::luna::Luna::merge(file, cc.storage.and_then(|s| eframe::get_value(s, "luna")));
         app.luna_saved = app.luna;
+        // To try every skin: SOLARUM_LUNA_ALL=1 (the real stardust stays as it is)
+        app.luna.preview = std::env::var_os("SOLARUM_LUNA_ALL").is_some();
         app.shared.touches.store(get("touches").unwrap_or(true), Ordering::Relaxed);
         app.on_start = cc.storage.and_then(|s| eframe::get_value(s, "on_start")).unwrap_or(OnStart::Wait);
         // Straight into the music, if the settings say so
@@ -500,6 +505,7 @@ impl SolarumApp {
             space_rect: Rect::from_min_size(pos2(280.0, 70.0), vec2(800.0, 600.0)),
             on_start: OnStart::Wait,
             keep_tempo: false,
+            luna_desk: false,
             taste: Default::default(),
             luna: Default::default(),
             luna_up: None,
@@ -695,6 +701,7 @@ impl eframe::App for SolarumApp {
         eframe::set_value(storage, "radar", &self.radar);
         eframe::set_value(storage, "log_facts", &self.log.facts);
         eframe::set_value(storage, "keep_tempo", &self.keep_tempo);
+        eframe::set_value(storage, "luna_desk", &self.luna_desk);
         eframe::set_value(storage, "touches", &self.shared.touches.load(Ordering::Relaxed));
         let recent: Vec<String> = self.recent.iter().map(|p| p.display().to_string()).collect();
         eframe::set_value(storage, "recent", &recent);

@@ -114,11 +114,17 @@ pub struct Luna {
     pub today: Tally,
     #[serde(default)]
     pub day: u32,
+    /// Everything unlocked, to try the skins (`SOLARUM_LUNA_ALL=1`) – never saved
+    #[serde(skip)]
+    pub preview: bool,
 }
 
 impl Luna {
     /// 1 … 10
     pub fn level(&self) -> usize {
+        if self.preview {
+            return LEVELS.len();
+        }
         LEVELS.iter().filter(|&&l| self.dust >= l).count()
     }
 

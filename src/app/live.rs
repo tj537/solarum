@@ -87,7 +87,14 @@ impl SolarumApp {
         } else {
             0.0
         };
-        let extra = (ui.available_height() - 30.0 - live_h - sound_need - 2.0 * gap).max(0.0);
+        // Luna's screen at the bottom (a setting) takes its share first
+        let luna_h = match (self.luna_desk, tall) {
+            (false, _) => 0.0,
+            (true, true) => 140.0,
+            (true, false) => 104.0,
+        };
+        let luna_need = if self.luna_desk { luna_h + gap } else { 0.0 };
+        let extra = (ui.available_height() - 30.0 - live_h - sound_need - 2.0 * gap - luna_need).max(0.0);
         let filter_h = filter_h + (extra * 0.3).min(150.0 - filter_h).max(0.0);
         let bh = bh + (extra * 0.45 / 3.0).min(70.0 - bh).max(0.0);
         let drop_h = drop_h + (extra * 0.25).min(120.0 - drop_h).max(0.0);
@@ -176,6 +183,80 @@ impl SolarumApp {
         }
         if self.live_open {
             self.live_controls(ui, live, now, w, tall, energy_h, filter_h, bh, drop_h);
+        }
+        if self.luna_desk {
+            let rest = ui.available_height() - gap;
+            if rest >= 70.0 {
+                // it takes what's left, down to the bottom like SOLAR OS on the left
+                self.luna_screen(ui, w, rest.min(260.0), now);
+            }
+        }
+    }
+
+    /// Luna at the bottom of the panel, in a screen set into the concrete like SOLAR OS: it
+    /// dances to the beat while the music plays, with its level and what comes next. A click
+    /// opens the settings, where it's dressed up.
+    fn luna_screen(&mut self, ui: &mut Ui, w: f32, h: f32, now: f64) {
+        let (outer, resp) = ui.allocate_exact_size(vec2(w, h), Sense::click());
+        let screen = widgets::bezel_frame(ui.painter(), outer, 13.0, 4.0);
+        let p = ui.painter_at(screen);
+        let hot = resp.hovered();
+        let luna = self.luna;
+        let ink = luna.ink();
+        let t = now as f32;
+        p.rect_filled(screen, 10.0, mix(BG, Color32::BLACK, 0.55));
+        if hot {
+            p.rect_stroke(screen, 10.0, stroke(1.0, alpha(ink, 0.6)), egui::StrokeKind::Inside);
+        }
+        // to the beat while it plays, a slow sway when it doesn't
+        let playing = self.playing();
+        let beat = if playing {
+            (now * self.song.bpm as f64 / 60.0 * std::f64::consts::PI).sin().abs() as f32
+        } else {
+            ((t * 0.8).sin() * 0.5 + 0.5) * 0.3
+        };
+        let s = (screen.height() * 0.3).clamp(22.0, 40.0);
+        let lc = pos2(
+            screen.left() + s * 1.5 + (t * 1.1).sin() * 2.0,
+            screen.center().y - s * 0.3 - beat * s * 0.12,
+        );
+        let wave = if hot {
+            (t * 6.0).sin() * 0.5 + 0.5
+        } else {
+            ((t % 6.0 - 5.0).max(0.0) * std::f32::consts::TAU).sin().abs()
+        };
+        crate::face::halo(&p, lc, s * 1.2, ink, if playing { 0.2 + 0.2 * beat } else { 0.18 });
+        luna.draw(&p, lc, s, t, 1.0, wave);
+        let shadow = Rect::from_center_size(pos2(lc.x, lc.y + s * 0.88 + beat * s * 0.12), vec2(s * (0.9 - 0.2 * beat), 4.0));
+        p.rect_filled(shadow, 2.0, alpha(ink, 0.18));
+
+        let x = screen.left() + s * 3.1;
+        let tw = screen.right() - 12.0 - x;
+        let lv = luna.level();
+        let (into, next) = luna.progress();
+        let top = screen.center().y - 40.0;
+        p.text(pos2(x, top), Align2::LEFT_CENTER, "LUNA", bold(10.0), alpha(ink, 0.9));
+        p.text(pos2(x, top + 20.0), Align2::LEFT_CENTER, format!("Level {lv}"), bold(18.0), TEXT);
+        let bar = Rect::from_min_size(pos2(x, top + 36.0), vec2(tw, 6.0));
+        p.rect_filled(bar, 3.0, PANEL_HI);
+        p.rect_filled(Rect::from_min_size(bar.min, vec2(bar.width() * into, bar.height())), 3.0, ink);
+        let (dust, coming) = match next {
+            Some(n) => (
+                format!("{} {} / {n}", ph::SPARKLE, luna.dust),
+                format!("Next: {}", crate::luna::Luna::unlocked(lv + 1)),
+            ),
+            None => (format!("{} {}", ph::SPARKLE, luna.dust), "Everything unlocked".to_owned()),
+        };
+        p.text(pos2(x, top + 56.0), Align2::LEFT_CENTER, dust, bold(11.0), ink);
+        let coming = widgets::fit_text(&p, &coming, body(11.0), tw);
+        p.text(pos2(x, top + 74.0), Align2::LEFT_CENTER, coming, body(11.0), DIM);
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
+        if resp
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .on_hover_text("Luna – click to dress it up")
+            .clicked()
+        {
+            self.settings = true;
         }
     }
 

@@ -143,6 +143,11 @@ impl SolarumApp {
                             row(ui, "COLOUR", &crate::luna::COLORS, &mut luna.color);
                             row(ui, "EXTRA", &extras, &mut luna.extra);
                             self.luna = luna;
+                            ui.add_space(4.0);
+                            ui.checkbox(&mut self.luna_desk, "Show Luna on the main screen (bottom right)");
+                            if self.luna.preview {
+                                note(ui, "Preview: everything unlocked to try it on (SOLARUM_LUNA_ALL) – your stardust stays as it is.");
+                            }
                         });
                     ui.add_space(12.0);
 
