@@ -495,7 +495,7 @@ mod tests {
             eframe::egui::CentralPanel::default()
                 .frame(eframe::egui::Frame::new().fill(Color32::from_rgb(10, 10, 14)))
                 .show(ctx, |ui| {
-                    for a in 0..4u8 {
+                    for a in 0..5u8 {
                         for e in 0..4u8 {
                             let luna = crate::luna::Luna {
                                 antenna: a,
@@ -503,8 +503,8 @@ mod tests {
                                 color: (a + e) % 5,
                                 ..Default::default()
                             };
-                            let c = pos2(130.0 + e as f32 * 210.0, 95.0 + a as f32 * 150.0);
-                            luna.draw(ui.painter(), c, 56.0, 0.4, 1.0, 0.6);
+                            let c = pos2(130.0 + e as f32 * 210.0, 85.0 + a as f32 * 122.0);
+                            luna.draw(ui.painter(), c, 48.0, 0.4, 1.0, 0.6);
                         }
                     }
                     let _ = vec2(0.0, 0.0);
