@@ -75,7 +75,7 @@ pub const COLORS: [(&str, usize, Color32); 5] = [
     ("Plasma", 10, Color32::from_rgb(190, 140, 255)),
 ];
 /// The extras: name and level (0 = none)
-pub const EXTRAS: [(&str, usize); 4] = [("None", 1), ("Shades", 4), ("Glow sticks", 7), ("Crown", 10)];
+pub const EXTRAS: [(&str, usize); 4] = [("None", 1), ("Shades", 4), ("Halo", 7), ("Wings", 10)];
 
 /// New lines Luna drops into the log from a level on
 const LINES: [(usize, &str); 12] = [
@@ -85,11 +85,11 @@ const LINES: [(usize, &str); 12] = [
     (4, "Can't see a thing in these. Don't care. Looking fresh."),
     (5, "Halfway to the stars, brother. Keep cooking."),
     (6, "I literally have a star on my head. Main character."),
-    (7, "Glow sticks up! The whole galaxy can see me now."),
+    (7, "Got a halo now. Angel of the dancefloor, fam."),
     (7, "Real talk, you made me who I am. Respect."),
     (8, "Gold edition Luna. Limited drop. Only one exists."),
     (9, "Satellite dish online. Picking up raves from three galaxies."),
-    (10, "Level ten. The crown fits. We're royalty now."),
+    (10, "Wings out. Level ten. I can fly to the next rave."),
     (10, "We did it, fam. From a little robot to a legend."),
 ];
 
@@ -302,6 +302,47 @@ impl Luna {
         let line = stroke(2.0, ink);
         // Body and head
         let body = Rect::from_center_size(c + vec2(0.0, 0.62 * s), vec2(0.56 * s, 0.34 * s));
+        if self.extra == 3 {
+            // two wings from behind the shoulders: a curved top edge, three scallops below,
+            // beating slowly
+            let flap = (t * 3.0).sin() * 0.18 + 0.05;
+            let quad = |a: egui::Vec2, ctrl: egui::Vec2, b: egui::Vec2, out: &mut Vec<egui::Vec2>| {
+                for i in 1..=8 {
+                    let u = i as f32 / 8.0;
+                    out.push(a * (1.0 - u) * (1.0 - u) + ctrl * 2.0 * u * (1.0 - u) + b * u * u);
+                }
+            };
+            for side in [-1.0f32, 1.0] {
+                let base = pos2(c.x + side * 0.3 * s, body.top() + 0.04 * s);
+                let tip = vec2(0.8, -0.46);
+                let mut pts = vec![vec2(0.0, 0.0)];
+                quad(vec2(0.0, 0.0), vec2(0.3, -0.5), tip, &mut pts);
+                let stops = [tip, vec2(0.62, -0.14), vec2(0.42, -0.02), vec2(0.2, 0.06), vec2(0.0, 0.0)];
+                for w in stops.windows(2) {
+                    let mid = (w[0] + w[1]) * 0.5 + vec2(0.04, 0.09);
+                    quad(w[0], mid, w[1], &mut pts);
+                }
+                // the last scallop ends where the edge began: once is enough for the outline
+                pts.pop();
+                let (sn, cs) = flap.sin_cos();
+                let pts: Vec<Pos2> = pts
+                    .iter()
+                    .map(|v| {
+                        let r = vec2(v.x * cs + v.y * sn, -v.x * sn + v.y * cs);
+                        base + vec2(side * r.x, r.y) * s
+                    })
+                    .collect();
+                // two feather lines inside, from the shoulder to the scallops
+                let at = |v: egui::Vec2| {
+                    let r = vec2(v.x * cs + v.y * sn, -v.x * sn + v.y * cs);
+                    base + vec2(side * r.x, r.y) * s
+                };
+                for v in [vec2(0.62, -0.14), vec2(0.42, -0.02)] {
+                    p.line_segment([at(vec2(0.06, -0.04)), at(v * 0.92)], stroke(1.2, ink.gamma_multiply(0.6)));
+                }
+                p.add(Shape::closed_line(pts, stroke(2.0, ink)));
+            }
+        }
         p.rect_stroke(body, 0.08 * s, line, egui::StrokeKind::Middle);
         p.circle_filled(body.center(), 0.05 * s, ink.gamma_multiply(0.5 + 0.5 * (t * 4.0).sin().abs()));
         p.line_segment([c + vec2(0.0, 0.39 * s), body.center_top()], line);
@@ -313,31 +354,17 @@ impl Luna {
             p.rect_filled(ear, 0.03 * s, ink.gamma_multiply(0.7));
         }
         self.draw_antenna(p, head, s, t, ink);
-        if self.extra == 3 {
-            // a crown on top: a band and three points, a jewel on each
-            let base = head.top() + 0.03 * s;
-            let w = 0.78 * s;
-            let band = Rect::from_min_max(pos2(c.x - w / 2.0, base - 0.12 * s), pos2(c.x + w / 2.0, base));
-            let top = band.top();
-            for (x, h) in [(-0.5f32, 0.26f32), (0.0, 0.36), (0.5, 0.26)] {
-                let px = c.x + x * (w - 0.16 * s);
-                let tri = vec![
-                    pos2(px - 0.15 * s, top + 0.01 * s),
-                    pos2(px + 0.15 * s, top + 0.01 * s),
-                    pos2(px, top - h * s),
-                ];
-                p.add(Shape::convex_polygon(tri, ink, Stroke::NONE));
-                glow(p, pos2(px, top - h * s), 0.05 * s, ink, 0.6);
-                p.circle_filled(
-                    pos2(px, top - h * s),
-                    0.045 * s,
-                    Color32::WHITE.gamma_multiply(0.9 * fade.clamp(0.0, 1.0)),
-                );
-            }
-            p.rect_filled(band, 0.03 * s, ink);
-            for x in [-0.25f32, 0.0, 0.25] {
-                p.circle_filled(pos2(c.x + x * w, band.center().y), 0.035 * s, Color32::BLACK.gamma_multiply(0.55));
-            }
+        if self.extra == 2 {
+            // a halo floating over the head, bobbing a little, glowing softly
+            let hc = pos2(c.x, head.top() - 0.3 * s + (t * 2.0).sin() * 0.03 * s);
+            let ring: Vec<Pos2> = (0..32)
+                .map(|i| {
+                    let a = i as f32 / 32.0 * TAU;
+                    hc + vec2(a.cos() * 0.36 * s, a.sin() * 0.09 * s)
+                })
+                .collect();
+            p.add(Shape::closed_line(ring.clone(), stroke(0.12 * s, ink.gamma_multiply(0.15))));
+            p.add(Shape::closed_line(ring, stroke(2.5, ink)));
         }
         // Eyes: blink now and then – or shades
         if self.extra == 1 {
@@ -375,23 +402,6 @@ impl Luna {
         let hand_l = shoulder_l + vec2(-0.2 * s, 0.26 * s);
         p.line_segment([shoulder_l, hand_l], line);
         p.circle_stroke(hand_l, 0.06 * s, line);
-        if self.extra == 2 {
-            // a glow stick in each hand, swinging with the arm – one in Luna's colour, one in its
-            // opposite
-            let other = Color32::from_rgb(255 - ink.r() / 2, 255 - ink.g() / 2, 255 - ink.b() / 3).gamma_multiply(fade.clamp(0.0, 1.0));
-            for (hand, from, col, swing) in [
-                (hand_r, shoulder_r, ink, (t * 7.0).sin() * 0.3),
-                (hand_l, shoulder_l, other, (t * 3.0).sin() * 0.25),
-            ] {
-                let dir = (hand - from).normalized();
-                let a = dir.y.atan2(dir.x) + swing;
-                let d = vec2(a.cos(), a.sin()) * 0.3 * s;
-                let (a0, a1) = (hand - d * 0.45, hand + d);
-                p.line_segment([a0, a1], stroke(0.2 * s, col.gamma_multiply(0.18)));
-                p.line_segment([a0, a1], stroke(0.1 * s, col));
-                p.line_segment([a0 + d * 0.1, a1 - d * 0.1], stroke(0.035 * s, Color32::WHITE.gamma_multiply(0.7)));
-            }
-        }
     }
 
     fn draw_antenna(&self, p: &egui::Painter, head: Rect, s: f32, t: f32, ink: Color32) {
@@ -481,7 +491,7 @@ mod tests {
         fresh.sanitize();
         assert_eq!((fresh.antenna, fresh.color, fresh.extra), (0, 0, 0));
         assert_eq!(Luna::unlocked(4), "shades");
-        assert_eq!(Luna::unlocked(10), "the colour plasma and crown");
+        assert_eq!(Luna::unlocked(10), "the colour plasma and wings");
         assert!((2..=10).all(|lv| Luna::unlocked(lv) != "new lines to drop" || LINES.iter().any(|l| l.0 == lv)));
     }
 
