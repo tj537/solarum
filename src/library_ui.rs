@@ -58,6 +58,7 @@ enum Handle {
 const KID_ID: u64 = u64::MAX - 8;
 /// … and for Luna's sound of the day
 const DAY_ID: u64 = u64::MAX - 2;
+// (DAY_ID + 0 … 2, one for each)
 
 /// Breeding a sound: four children of your last pick, every round a little calmer
 struct Breed {
@@ -169,8 +170,9 @@ pub struct LibraryUi {
     pen: Option<(usize, f32, u8)>,
     /// Breeding a sound (the Breed step, kept for Back from Finish)
     breed: Option<Breed>,
-    /// Luna's sound of the day, rendered once a day
-    day: Option<(library::DaySound, Arc<SampleBuf>)>,
+    /// Luna's three sounds of the day (rendered once a day) and the one on show
+    day: Vec<(library::DaySound, Arc<SampleBuf>)>,
+    day_at: usize,
     /// Making a new sound (`None`: the library), and the step Back goes to from Finish
     flow: Option<Step>,
     back_to: Step,
@@ -211,7 +213,8 @@ impl Default for LibraryUi {
             tool: Tool::Pen,
             pen: None,
             breed: None,
-            day: None,
+            day: Vec::new(),
+            day_at: 0,
             flow: None,
             back_to: Step::Start,
             space: false,
@@ -721,7 +724,7 @@ impl LibraryUi {
             // ── Making a new sound: the whole screen, one step at a time ──
             self.flow_bar(ui, top, lib, step, &mut out, now);
             match self.flow {
-                Some(Step::Start) => self.start_page(ui, body_r, lib, blocked, &mut out, now),
+                Some(Step::Start) => self.start_page(ui, body_r, lib, playhead, blocked, &mut out, now),
                 Some(Step::Draw) => self.draw_board(ui, body_r, playhead, blocked, &mut out, now),
                 Some(Step::Record) => self.record_page(ui, body_r, lib, now),
                 Some(Step::Breed) => self.breed_page(ui, body_r, playhead, blocked, &mut out, now),
@@ -750,7 +753,6 @@ impl LibraryUi {
                     self.open_start();
                 }
             });
-            let body_r = self.day_banner(ui, body_r, lib, playhead, blocked, &mut out, now);
             if lib.entries.iter().any(|e| !e.draft) {
                 let list_w = (body_r.width() * 0.28).clamp(260.0, 340.0);
                 let list_r = Rect::from_min_size(body_r.min, vec2(list_w, body_r.height()));
@@ -1435,7 +1437,8 @@ impl LibraryUi {
 
     /// Every way to a new sound: a track's template to paint over – or a blank board, the
     /// mic, a file
-    fn start_page(&mut self, ui: &mut Ui, r: Rect, lib: &mut Library, blocked: bool, out: &mut Vec<Out>, now: f64) {
+    #[allow(clippy::too_many_arguments)]
+    fn start_page(&mut self, ui: &mut Ui, r: Rect, lib: &mut Library, playhead: Option<f64>, blocked: bool, out: &mut Vec<Out>, now: f64) {
         let inner = r.shrink(22.0);
         let mut ui = ui.new_child(UiBuilder::new().max_rect(inner).layout(egui::Layout::top_down(egui::Align::Min)));
         if blocked {
@@ -1453,8 +1456,15 @@ impl LibraryUi {
         let low_h = 136.0;
         let t = ui.input(|i| i.time) as f32;
 
-        // The easiest way, on top and in lime: breed one – no drawing, no knobs
-        let (br, resp) = ui.allocate_exact_size(vec2(inner.width(), 118.0), Sense::click());
+        // The easiest ways, on top: half Luna's sounds of the day, half breeding your own
+        let top_h = 168.0;
+        let (row, _) = ui.allocate_exact_size(vec2(inner.width(), top_h), Sense::hover());
+        let half = (row.width() - gap) / 2.0;
+        let day_r = Rect::from_min_size(row.min, vec2(half, top_h));
+        let br = Rect::from_min_size(pos2(day_r.right() + gap, row.top()), vec2(half, top_h));
+        self.day_card(&mut ui, day_r, lib, playhead, blocked, out, now);
+
+        let resp = ui.interact(br, ui.id().with("breed-card"), Sense::click());
         let hot = resp.hovered() && !blocked;
         let p = ui.painter_at(br.expand(6.0));
         p.rect_stroke(
@@ -1465,43 +1475,37 @@ impl LibraryUi {
         );
         p.rect_filled(br, 12.0, mix(PAD, ACID, if hot { 0.14 } else { 0.07 }));
         p.rect_stroke(br, 12.0, stroke(1.5, ACID), egui::StrokeKind::Inside);
-        let pic = Rect::from_min_size(br.min + vec2(10.0, 10.0), vec2(230.0, br.height() - 20.0));
+        let pic = Rect::from_min_size(br.min + vec2(12.0, 12.0), vec2((br.width() * 0.36).min(220.0), br.height() - 24.0));
         p.rect_filled(pic, 9.0, SPACE);
         family_picture(&p, pic.shrink(12.0), hot, t);
-        let x = pic.right() + 20.0;
+        let x = pic.right() + 18.0;
         let badge = p.layout_no_wrap("NEW".into(), bold(10.0), BG);
         let badge_r = Rect::from_min_size(pos2(x, br.top() + 22.0), badge.size() + vec2(14.0, 6.0));
         p.rect_filled(badge_r, badge_r.height() / 2.0, ACID);
         p.galley(badge_r.center() - badge.size() / 2.0, badge, BG);
-        p.text(
-            pos2(badge_r.right() + 10.0, badge_r.center().y),
-            Align2::LEFT_CENTER,
-            "Breed a sound",
-            bold(20.0),
-            TEXT,
-        );
-        let go = p.layout_no_wrap(format!("Start breeding  {}", ph::ARROW_RIGHT), bold(14.0), BG);
-        let go_r = Rect::from_min_size(
-            pos2(br.right() - 22.0 - go.size().x - 36.0, br.center().y - go.size().y / 2.0 - 9.0),
-            go.size() + vec2(36.0, 18.0),
-        );
-        let sub_w = go_r.left() - x - 24.0;
+        p.text(pos2(x, br.top() + 54.0), Align2::LEFT_CENTER, "Breed a sound", bold(20.0), TEXT);
+        let sub_w = br.right() - x - 18.0;
         for (k, line) in [
-            "Hear four sounds, click the one you like best – it gets four children.",
-            "A few rounds and it's yours. No drawing, no knobs.",
+            "Hear four, click the one you like best –",
+            "it gets four children. A few rounds, no knobs.",
         ]
         .into_iter()
         .enumerate()
         {
             let line = fit_text(&p, line, body(13.0), sub_w);
             p.text(
-                pos2(x, br.top() + 60.0 + k as f32 * 20.0),
+                pos2(x, br.top() + 80.0 + k as f32 * 19.0),
                 Align2::LEFT_CENTER,
                 line,
                 body(13.0),
                 DIM,
             );
         }
+        let go = p.layout_no_wrap(format!("Start breeding  {}", ph::ARROW_RIGHT), bold(14.0), BG);
+        let go_r = Rect::from_min_size(
+            br.right_bottom() - go.size() - vec2(36.0 + 16.0, 18.0 + 14.0),
+            go.size() + vec2(36.0, 18.0),
+        );
         p.rect_filled(go_r, go_r.height() / 2.0, if hot { Color32::WHITE } else { ACID });
         p.galley(go_r.center() - go.size() / 2.0, go, BG);
         if hot {
@@ -1738,38 +1742,35 @@ impl LibraryUi {
         });
     }
 
-    // ───────────── Luna's sound of the day ─────────────
+    // ───────────── Luna's sounds of the day ─────────────
 
-    /// Luna on top of the library with today's sound: hear it, keep it. Returns what's left
-    /// of `r` below it.
+    /// Luna with the day's three sounds, one at a time: ‹ › (or the dots) go through them,
+    /// click the sound to hear it, Keep it puts it in your sounds
     #[allow(clippy::too_many_arguments)]
-    fn day_banner(
-        &mut self,
-        ui: &mut Ui,
-        r: Rect,
-        lib: &mut Library,
-        playhead: Option<f64>,
-        blocked: bool,
-        out: &mut Vec<Out>,
-        now: f64,
-    ) -> Rect {
-        let today = library::DaySound::today().day;
-        if self.day.as_ref().is_none_or(|(d, _)| d.day != today) {
-            let d = library::DaySound::of(today);
-            let buf = bred_buf(&d.genes);
-            self.day = Some((d, buf));
+    fn day_card(&mut self, ui: &mut Ui, br: Rect, lib: &mut Library, playhead: Option<f64>, blocked: bool, out: &mut Vec<Out>, now: f64) {
+        let today = library::DaySound::today();
+        if self.day.first().is_none_or(|(d, _)| d.day != today[0].day) {
+            self.day = today
+                .into_iter()
+                .map(|d| {
+                    let b = bred_buf(&d.genes);
+                    (d, b)
+                })
+                .collect();
+            self.day_at = 0;
         }
-        let Some((d, buf)) = &self.day else { return r };
+        let at = self.day_at.min(self.day.len().saturating_sub(1));
+        let Some((d, buf)) = self.day.get(at) else { return };
         let (voice, genes, name, says, date) = (d.voice, d.genes, d.name.clone(), d.says, d.date());
         let buf = buf.clone();
+        let count = self.day.len();
         let col = track_color(voice);
         let kept = lib.entries.iter().find(|e| !e.draft && e.name == name).map(|e| e.id);
         let t = ui.input(|i| i.time) as f32;
-        let p = ui.painter().clone();
-
-        let br = Rect::from_min_size(r.min, vec2(r.width(), 112.0));
+        let p = ui.painter_at(br.expand(6.0));
         let hot = ui.rect_contains_pointer(br) && !blocked;
-        // a deep-space card with a lime rim, a little glow around it on hover
+
+        // a deep-space card with a lime rim and a few stars of its own
         p.rect_stroke(
             br.expand(3.0),
             15.0,
@@ -1780,44 +1781,85 @@ impl LibraryUi {
         p.rect_stroke(
             br,
             12.0,
-            stroke(1.0, alpha(ACID, if hot { 0.9 } else { 0.6 })),
+            stroke(1.5, alpha(ACID, if hot { 1.0 } else { 0.7 })),
             egui::StrokeKind::Inside,
         );
-        for i in 0..18 {
-            // a few stars of its own
+        for i in 0..16 {
             let x = br.left() + crate::widgets::hash(i * 7 + 1) * br.width();
             let y = br.top() + 8.0 + crate::widgets::hash(i * 7 + 2) * (br.height() - 16.0);
-            let tw = 0.25 + 0.35 * ((t * 1.3 + i as f32).sin() * 0.5 + 0.5);
+            let tw = 0.2 + 0.35 * ((t * 1.3 + i as f32).sin() * 0.5 + 0.5);
             p.circle_filled(pos2(x, y), 1.0, alpha(TEXT, tw));
         }
 
-        // Luna, waving now and then (always while you look), and what it says
-        let luna = pos2(br.left() + 52.0, br.center().y - 10.0);
+        // Luna, waving now and then (all the time while you look), and what it made
+        let luna = pos2(br.left() + 46.0, br.top() + 50.0);
         let wave = if hot {
             (t * 6.0).sin() * 0.5 + 0.5
         } else {
             ((t % 7.0 - 6.0).max(0.0) * TAU).sin().abs()
         };
-        crate::face::halo(&p, luna, 38.0, ACID, 0.25);
-        crate::log::robot_waving(&p, luna, 34.0, t, ACID, wave);
-        let bubble_x = br.left() + 104.0;
+        crate::face::halo(&p, luna, 34.0, ACID, 0.25);
+        crate::log::robot_waving(&p, luna, 30.0, t, ACID, wave);
+        let x = br.left() + 92.0;
         p.text(
-            pos2(bubble_x, br.top() + 24.0),
+            pos2(x, br.top() + 22.0),
             Align2::LEFT_CENTER,
-            format!("LUNA'S SOUND OF THE DAY  ·  {}", date.to_uppercase()),
+            format!("LUNA'S SOUNDS OF THE DAY  ·  {}", date.to_uppercase()),
             bold(11.0),
             ACID,
         );
-        p.circle_filled(pos2(bubble_x + 6.0, br.top() + 54.0), 5.0, col);
-        p.text(pos2(bubble_x + 18.0, br.top() + 54.0), Align2::LEFT_CENTER, &name, bold(22.0), TEXT);
 
-        // On the right: Keep it (or that it's kept), then the sound with a play button
+        // ‹ 1 2 3 › top right: one dot per sound, in its track's colour
+        let mut go = None;
+        let ny = br.top() + 24.0;
+        let arrow = |p: &egui::Painter, c: Pos2, icon: &str, hot: bool| {
+            p.circle_filled(c, 13.0, if hot { PANEL_HI } else { alpha(PANEL_HI, 0.5) });
+            p.text(c, Align2::CENTER_CENTER, icon, body(13.0), if hot { TEXT } else { DIM });
+        };
+        let next_c = pos2(br.right() - 26.0, ny);
+        let dots_w = count as f32 * 16.0;
+        let prev_c = pos2(next_c.x - 26.0 - dots_w - 8.0, ny);
+        for (c, icon, step) in [(prev_c, ph::CARET_LEFT, count - 1), (next_c, ph::CARET_RIGHT, 1)] {
+            let resp = ui.interact(
+                Rect::from_center_size(c, vec2(26.0, 26.0)),
+                ui.id().with(("day-nav", step)),
+                Sense::click(),
+            );
+            arrow(&p, c, icon, resp.hovered() && !blocked);
+            if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() && !blocked {
+                go = Some((at + step) % count);
+            }
+        }
+        for k in 0..count {
+            let c = pos2(prev_c.x + 13.0 + 4.0 + 8.0 + k as f32 * 16.0, ny);
+            let resp = ui.interact(
+                Rect::from_center_size(c, vec2(14.0, 22.0)),
+                ui.id().with(("day-dot", k)),
+                Sense::click(),
+            );
+            let dc = track_color(self.day[k].0.voice);
+            if k == at {
+                p.circle_filled(c, 5.0, dc);
+            } else {
+                p.circle_stroke(c, 4.0, stroke(1.5, if resp.hovered() { dc } else { alpha(dc, 0.6) }));
+            }
+            if resp.on_hover_text(self.day[k].0.name.clone()).clicked() && !blocked {
+                go = Some(k);
+            }
+        }
+
+        p.circle_filled(pos2(x + 6.0, br.top() + 50.0), 5.0, col);
+        let title_w = prev_c.x - 20.0 - (x + 18.0);
+        let title = fit_text(&p, &name, bold(20.0), title_w);
+        p.text(pos2(x + 18.0, br.top() + 50.0), Align2::LEFT_CENTER, title, bold(20.0), TEXT);
+        let line = fit_text(&p, &format!("“{says}”"), body(13.0), br.right() - 20.0 - x);
+        p.text(pos2(x, br.top() + 76.0), Align2::LEFT_CENTER, line, body(13.0), DIM);
+
+        // The sound (click to hear it) and Keep it
+        let row = Rect::from_min_max(pos2(br.left() + 14.0, br.top() + 96.0), br.right_bottom() - vec2(16.0, 14.0));
         let mut pill_ui = ui.new_child(
             UiBuilder::new()
-                .max_rect(Rect::from_min_max(
-                    pos2(br.right() - 240.0, br.top()),
-                    br.right_bottom() - vec2(20.0, 0.0),
-                ))
+                .max_rect(row)
                 .layout(egui::Layout::right_to_left(egui::Align::Center)),
         );
         if blocked {
@@ -1836,18 +1878,14 @@ impl LibraryUi {
             }
             Some(id) => {
                 if chip(&mut pill_ui, &format!("{}  In your sounds", ph::CHECK), true, ACID)
-                    .on_hover_text("Show it")
+                    .on_hover_text("Show it in your sounds")
                     .clicked()
                 {
                     show = Some(id);
                 }
             }
         }
-        let pill_left = pill_ui.min_rect().left();
-        let win = Rect::from_min_max(
-            pos2(pill_left - 16.0 - 300.0, br.top() + 14.0),
-            pos2(pill_left - 16.0, br.bottom() - 14.0),
-        );
+        let win = Rect::from_min_max(row.min, pos2(pill_ui.min_rect().left() - 14.0, row.bottom()));
         let win_resp = ui.interact(win, ui.id().with("day-sound"), Sense::click());
         let win_hot = win_resp.hovered() && !blocked;
         p.rect_filled(win, 9.0, SPACE);
@@ -1857,27 +1895,22 @@ impl LibraryUi {
             stroke(1.0, if win_hot { col } else { alpha(LINE, 0.7) }),
             egui::StrokeKind::Inside,
         );
-        let play_c = pos2(win.left() + 34.0, win.center().y);
-        let is_playing = self.playing.as_ref().is_some_and(|pl| pl.id == DAY_ID);
-        p.circle_filled(play_c, 20.0, if win_hot { Color32::WHITE } else { col });
+        let play_c = pos2(win.left() + 28.0, win.center().y);
+        let is_playing = self.playing.as_ref().is_some_and(|pl| pl.id == DAY_ID + at as u64);
+        p.circle_filled(play_c, 17.0, if win_hot { Color32::WHITE } else { col });
         p.text(
             play_c + vec2(if is_playing { 0.0 } else { 1.5 }, 0.0),
             Align2::CENTER_CENTER,
             if is_playing { ph::STOP } else { ph::PLAY },
-            body(17.0),
+            body(15.0),
             BG,
         );
-        let pic = Rect::from_min_max(pos2(play_c.x + 34.0, win.top() + 10.0), win.right_bottom() - vec2(12.0, 10.0));
+        let pic = Rect::from_min_max(pos2(play_c.x + 30.0, win.top() + 8.0), win.right_bottom() - vec2(12.0, 8.0));
         thumb_drawing(&p, pic, &genes.drawing(), col);
         if let (true, Some(pos)) = (is_playing, playhead) {
             let x = pic.left() + (pos as f32 / SAMPLE_SR / genes.length).min(1.0) * pic.width();
-            p.line_segment([pos2(x, win.top() + 6.0), pos2(x, win.bottom() - 6.0)], stroke(1.5, TEXT));
+            p.line_segment([pos2(x, win.top() + 5.0), pos2(x, win.bottom() - 5.0)], stroke(1.5, TEXT));
         }
-
-        // What Luna says, as far as there's room
-        let says_w = win.left() - 24.0 - (bubble_x + 18.0);
-        let line = fit_text(&p, &format!("“{says}”"), body(13.0), says_w);
-        p.text(pos2(bubble_x + 18.0, br.top() + 84.0), Align2::LEFT_CENTER, line, body(13.0), DIM);
         if hot || is_playing {
             ui.ctx().request_repaint();
         } else {
@@ -1885,25 +1918,30 @@ impl LibraryUi {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
         }
 
-        if win_resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() && !blocked {
+        if let Some(k) = go {
+            self.day_at = k;
+            // the next one plays right away – that's what you went there for
+            let b = self.day[k].1.clone();
+            self.audition(DAY_ID + k as u64, b, out, now);
+        } else if win_resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() && !blocked {
             if is_playing {
                 self.stop(out);
             } else {
-                self.audition(DAY_ID, buf.clone(), out, now);
+                self.audition(DAY_ID + at as u64, buf.clone(), out, now);
             }
         }
         if keep {
             let id = lib.add(&name, voice, buf.data.clone());
             self.unsaved = true;
-            self.filter = None;
             self.selected = Some(id);
             self.say(format!("Kept – {name} is in your sounds"), now);
         }
         if let Some(id) = show {
+            self.stop(out);
+            self.flow = None;
             self.filter = None;
             self.selected = Some(id);
         }
-        Rect::from_min_max(pos2(r.left(), br.bottom() + 14.0), r.max)
     }
 
     // ───────────── Breeding ─────────────

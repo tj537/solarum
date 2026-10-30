@@ -786,8 +786,8 @@ pub fn litter(parent: &Genes, round: usize, rng: &mut crate::rng::Rng) -> [Genes
     kids
 }
 
-/// Luna's sound of the day: a track and a sound bred a few rounds from its template, all
-/// from the day (days since 1970), so everyone gets the same one on the same day
+/// One of Luna's three sounds of the day: a track and a sound bred a few rounds from its
+/// template, all from the day (days since 1970), so everyone gets the same ones on the same day
 pub struct DaySound {
     pub day: u64,
     pub voice: Voice,
@@ -814,27 +814,42 @@ const DAY_SAYS: [&str; 8] = [
 ];
 
 impl DaySound {
-    pub fn of(day: u64) -> DaySound {
-        let mut rng = crate::rng::Rng::new(day.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0x5011_A6D0);
-        let voice = *rng.pick(&Voice::ALL);
-        let mut genes = Genes::of(voice);
-        for round in 0..4 {
-            let kids = litter(&genes, round, &mut rng);
-            genes = kids[rng.below(4) as usize];
+    /// The day's three: three different tracks, each with its own name and line
+    pub fn three(day: u64) -> [DaySound; 3] {
+        let seed = day.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0x5011_A6D0;
+        let mut rng = crate::rng::Rng::new(seed);
+        let mut voices = Voice::ALL;
+        let mut words: Vec<usize> = (0..DAY_WORDS.len()).collect();
+        let mut says: Vec<usize> = (0..DAY_SAYS.len()).collect();
+        for i in (1..voices.len()).rev() {
+            voices.swap(i, rng.below(i as u32 + 1) as usize);
         }
-        let word = rng.pick(&DAY_WORDS);
-        DaySound {
-            day,
-            voice,
-            genes,
-            name: format!("{word} {}", voice.name().to_lowercase()),
-            says: rng.pick(&DAY_SAYS),
+        for list in [&mut words, &mut says] {
+            for i in (1..list.len()).rev() {
+                list.swap(i, rng.below(i as u32 + 1) as usize);
+            }
         }
+        std::array::from_fn(|k| {
+            let voice = voices[k];
+            let mut rng = crate::rng::Rng::new(seed ^ (k as u64 + 1).wrapping_mul(0xD1B5_4A32_D192_ED03));
+            let mut genes = Genes::of(voice);
+            for round in 0..4 {
+                let kids = litter(&genes, round, &mut rng);
+                genes = kids[rng.below(4) as usize];
+            }
+            DaySound {
+                day,
+                voice,
+                genes,
+                name: format!("{} {}", DAY_WORDS[words[k]], voice.name().to_lowercase()),
+                says: DAY_SAYS[says[k]],
+            }
+        })
     }
 
-    /// Today's (UTC)
-    pub fn today() -> DaySound {
-        DaySound::of(now_secs() / 86_400)
+    /// Today's three (UTC)
+    pub fn today() -> [DaySound; 3] {
+        DaySound::three(now_secs() / 86_400)
     }
 
     /// The day as "Oct 30"
@@ -1159,22 +1174,24 @@ mod tests {
     }
 
     #[test]
-    fn the_sound_of_the_day_changes_daily_and_stays_clean() {
-        let a = DaySound::of(20_391);
-        assert_eq!(a.date(), "Oct 30");
-        assert_eq!(DaySound::of(0).date(), "Jan 1");
-        assert_eq!(a.genes, DaySound::of(20_391).genes);
-        let days: Vec<DaySound> = (20_000..20_030).map(DaySound::of).collect();
-        assert!(days.windows(2).all(|w| w[0].genes != w[1].genes));
-        assert!(
-            Voice::ALL.iter().all(|&v| days.iter().any(|d| d.voice == v)),
-            "every track gets its day"
-        );
+    fn the_sounds_of_the_day_change_daily_and_stay_clean() {
+        let a = DaySound::three(20_391);
+        assert_eq!(a[0].date(), "Oct 30");
+        assert_eq!(DaySound::three(0)[0].date(), "Jan 1");
+        assert_eq!(a.each_ref().map(|d| d.genes), DaySound::three(20_391).each_ref().map(|d| d.genes));
+        let days: Vec<[DaySound; 3]> = (20_000..20_030).map(DaySound::three).collect();
+        assert!(days.windows(2).all(|w| w[0][0].genes != w[1][0].genes));
         for d in &days {
-            let x = render_drawing(&d.genes.drawing());
-            let peak = x.iter().fold(0.0f32, |m, s| m.max(s.abs()));
-            assert!(peak <= 1.0 && peak > 0.05, "{}: peak {peak}", d.name);
+            // three different tracks, three names
+            assert!(d[0].voice != d[1].voice && d[1].voice != d[2].voice && d[0].voice != d[2].voice);
+            assert!(d[0].name != d[1].name && d[1].name != d[2].name && d[0].name != d[2].name);
+            for s in d {
+                let x = render_drawing(&s.genes.drawing());
+                let peak = x.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+                assert!(peak <= 1.0 && peak > 0.05, "{}: peak {peak}", s.name);
+            }
         }
+        assert!(Voice::ALL.iter().all(|&v| days.iter().any(|d| d.iter().any(|s| s.voice == v))));
     }
 
     #[test]
