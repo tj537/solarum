@@ -455,7 +455,7 @@ impl SolarumApp {
                 p.rect_filled(rect, 10.0, mix(BG, Color32::BLACK, 0.55).gamma_multiply(fade));
                 let size = (rect.height() * 0.32).min(64.0);
                 let c = rect.center() - vec2(0.0, size * 0.45);
-                crate::log::robot(&p, c, size, since, ACID.gamma_multiply(fade));
+                self.luna.draw(&p, c, size, since, fade, 1.0);
                 let hello = crate::log::HELLOS[(self.power_at as usize) % crate::log::HELLOS.len()];
                 let typed: String = hello.chars().take(((since - 0.3).max(0.0) * 50.0) as usize).collect();
                 p.text(

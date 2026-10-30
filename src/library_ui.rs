@@ -23,6 +23,8 @@ pub enum Out {
     Assign(Voice, usize),
     /// Give this sound a slot and put it on its track
     Use(u64),
+    /// Luna earned stardust (a bred sound picked, a sound kept or saved)
+    Dust(u32),
 }
 
 /// Where you are while making a new sound: it takes the whole screen, one step at a time
@@ -173,6 +175,8 @@ pub struct LibraryUi {
     /// Luna's three sounds of the day (rendered once a day) and the one on show
     day: Vec<(library::DaySound, Arc<SampleBuf>)>,
     day_at: usize,
+    /// Luna's skin (the app keeps it, and the stardust)
+    pub luna: crate::luna::Luna,
     /// Making a new sound (`None`: the library), and the step Back goes to from Finish
     flow: Option<Step>,
     back_to: Step,
@@ -215,6 +219,7 @@ impl Default for LibraryUi {
             breed: None,
             day: Vec::new(),
             day_at: 0,
+            luna: Default::default(),
             flow: None,
             back_to: Step::Start,
             space: false,
@@ -561,7 +566,10 @@ impl LibraryUi {
         if let Some(e) = lib.get_mut(id) {
             e.draft = false;
             let name = e.name.clone();
-            self.say(format!("Saved – {name} is in your sounds"), now);
+            self.say(
+                format!("Saved – {name} is in your sounds  ·  +{} {}", crate::luna::DUST_KEEP, ph::SPARKLE),
+                now,
+            );
         }
         self.unsaved = true;
         self.flow = None;
@@ -1729,6 +1737,7 @@ impl LibraryUi {
                 {
                     self.stop(out);
                     self.save_draft(lib, id, now);
+                    out.push(Out::Dust(crate::luna::DUST_KEEP));
                 }
                 _ => {}
             }
@@ -1798,8 +1807,8 @@ impl LibraryUi {
         } else {
             ((t % 7.0 - 6.0).max(0.0) * TAU).sin().abs()
         };
-        crate::face::halo(&p, luna, 34.0, ACID, 0.25);
-        crate::log::robot_waving(&p, luna, 30.0, t, ACID, wave);
+        crate::face::halo(&p, luna, 34.0, self.luna.ink(), 0.25);
+        self.luna.draw(&p, luna, 30.0, t, 1.0, wave);
         let x = br.left() + 92.0;
         p.text(
             pos2(x, br.top() + 22.0),
@@ -1934,7 +1943,11 @@ impl LibraryUi {
             let id = lib.add(&name, voice, buf.data.clone());
             self.unsaved = true;
             self.selected = Some(id);
-            self.say(format!("Kept – {name} is in your sounds"), now);
+            self.say(
+                format!("Kept – {name} is in your sounds  ·  +{} {}", crate::luna::DUST_KEEP, ph::SPARKLE),
+                now,
+            );
+            out.push(Out::Dust(crate::luna::DUST_KEEP));
         }
         if let Some(id) = show {
             self.stop(out);
@@ -2197,6 +2210,7 @@ impl LibraryUi {
             b.round_back(now);
         } else if let Some(k) = picked {
             b.pick(k, now);
+            out.push(Out::Dust(crate::luna::DUST_PICK));
             // the pointer is still there: the new child under it waits for the next hover
             b.hover = Some(k);
         } else if hovered != b.hover {

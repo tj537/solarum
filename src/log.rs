@@ -534,63 +534,6 @@ pub const DROPS: [&str; 16] = [
     "Main character energy on this one, fr.",
 ];
 
-/// Luna, the little robot on the computer's screen: a head with an antenna that blinks,
-/// eyes that blink, a smile, and an arm that waves. `t` is seconds since it appeared.
-pub fn robot(p: &egui::Painter, c: Pos2, s: f32, t: f32, ink: Color32) {
-    robot_waving(p, c, s, t, ink, 1.0);
-}
-
-/// Luna with the right arm waving by `wave` (0: it hangs like the left one, 1: a full wave)
-pub fn robot_waving(p: &egui::Painter, c: Pos2, s: f32, t: f32, ink: Color32, wave: f32) {
-    let line = stroke(2.0, ink);
-    // Body and head
-    let body = Rect::from_center_size(c + vec2(0.0, 0.62 * s), vec2(0.56 * s, 0.34 * s));
-    p.rect_stroke(body, 0.08 * s, line, egui::StrokeKind::Middle);
-    p.circle_filled(body.center(), 0.05 * s, ink.gamma_multiply(0.5 + 0.5 * (t * 4.0).sin().abs()));
-    p.line_segment([c + vec2(0.0, 0.39 * s), body.center_top()], line);
-    let head = Rect::from_center_size(c, vec2(s, 0.78 * s));
-    p.rect_stroke(head, 0.16 * s, line, egui::StrokeKind::Middle);
-    // Ears
-    for side in [-1.0, 1.0] {
-        let ear = Rect::from_center_size(c + vec2(side * 0.56 * s, 0.0), vec2(0.1 * s, 0.26 * s));
-        p.rect_filled(ear, 0.03 * s, ink.gamma_multiply(0.7));
-    }
-    // Antenna with a light that blinks
-    let tip = c - vec2(0.0, 0.62 * s);
-    p.line_segment([head.center_top(), tip], line);
-    let on = (t * 2.5).fract() < 0.6;
-    if on {
-        glow(p, tip, 0.08 * s, ink, 0.8);
-    }
-    p.circle_filled(tip, 0.06 * s, if on { ink } else { ink.gamma_multiply(0.4) });
-    // Eyes: blink now and then
-    let blink = if (t * 0.7).fract() > 0.92 { 0.15 } else { 1.0 };
-    for side in [-1.0, 1.0] {
-        let eye = Rect::from_center_size(c + vec2(side * 0.21 * s, -0.08 * s), vec2(0.15 * s, 0.18 * s * blink));
-        p.rect_filled(eye, 0.04 * s, ink);
-    }
-    // A smile
-    let smile: Vec<Pos2> = (0..=12)
-        .map(|i| {
-            let a = std::f32::consts::PI * (0.15 + 0.7 * i as f32 / 12.0);
-            c + vec2(0.0, 0.08 * s) + vec2(a.cos(), a.sin()) * 0.2 * s
-        })
-        .collect();
-    p.add(egui::Shape::line(smile, line));
-    // The right arm waves, the left one hangs
-    let shoulder_r = body.right_top() + vec2(0.0, 0.06 * s);
-    let a = -1.0 - 0.45 * (t * 7.0).sin();
-    let up = shoulder_r + vec2(a.cos().abs(), a.sin()) * 0.38 * s;
-    let down = shoulder_r + vec2(0.2 * s, 0.26 * s);
-    let hand_r = down + (up - down) * wave.clamp(0.0, 1.0);
-    p.line_segment([shoulder_r, hand_r], line);
-    p.circle_stroke(hand_r, 0.06 * s, line);
-    let shoulder_l = body.left_top() + vec2(0.0, 0.06 * s);
-    let hand_l = shoulder_l + vec2(-0.2 * s, 0.26 * s);
-    p.line_segment([shoulder_l, hand_l], line);
-    p.circle_stroke(hand_l, 0.06 * s, line);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

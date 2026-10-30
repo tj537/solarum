@@ -271,6 +271,10 @@ pub struct SolarumApp {
     pub keep_tempo: bool,
     /// What Luna learned you like (the thumbs in SOLAR OS) – saved with the settings
     pub taste: crate::ear::Taste,
+    /// Luna's stardust and skin – saved with the settings
+    pub luna: crate::luna::Luna,
+    /// The last level up and when, for the toast
+    pub luna_up: Option<(usize, f64)>,
     /// The auto mode's last change, its track as it was before, and when it came – for the thumbs
     pub last_auto: Option<(gen::Change, crate::song::Track, f64)>,
     /// Luna's manual (type help) is open next to SOLAR OS
@@ -372,6 +376,8 @@ impl SolarumApp {
         app.keep_tempo = get("keep_tempo").unwrap_or(false);
         app.taste = cc.storage.and_then(|s| eframe::get_value(s, "taste")).unwrap_or_default();
         app.send(Cmd::Taste(app.taste));
+        app.luna = cc.storage.and_then(|s| eframe::get_value(s, "luna")).unwrap_or_default();
+        app.luna.sanitize();
         app.shared.touches.store(get("touches").unwrap_or(true), Ordering::Relaxed);
         app.on_start = cc.storage.and_then(|s| eframe::get_value(s, "on_start")).unwrap_or(OnStart::Wait);
         // Straight into the music, if the settings say so
@@ -490,6 +496,8 @@ impl SolarumApp {
             on_start: OnStart::Wait,
             keep_tempo: false,
             taste: Default::default(),
+            luna: Default::default(),
+            luna_up: None,
             last_auto: None,
             help_open: false,
             drive: 0.0,
@@ -669,6 +677,7 @@ impl eframe::App for SolarumApp {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, "song", &self.song);
         eframe::set_value(storage, "taste", &self.taste);
+        eframe::set_value(storage, "luna", &self.luna);
         eframe::set_value(storage, "view", &self.view);
         eframe::set_value(storage, "slots", &self.slots);
         eframe::set_value(storage, "sample_slots", &self.sample_slots);
@@ -701,13 +710,21 @@ impl SolarumApp {
             if self.luna_drop_at == 0.0 {
                 self.luna_drop_at = now + 45.0 + self.rng.f32() as f64 * 45.0;
             } else if now >= self.luna_drop_at {
-                let line = *self.rng.pick(&crate::log::DROPS);
+                let line = *self.rng.pick(&self.luna.lines());
                 self.bunk(line, now);
                 self.luna_drop_at = now + 60.0 + self.rng.f32() as f64 * 90.0;
             }
         } else {
             self.luna_drop_at = 0.0;
         }
+        // Playing earns Luna stardust
+        if self.playing() {
+            if let Some(lv) = self.luna.play(dt) {
+                self.level_up(lv, now);
+            }
+        }
+        self.lib_ui.luna = self.luna;
+        self.luna_toast(ctx, now);
         let state = self.log_state();
         self.log.tick(state, now, &self.song);
 
@@ -768,6 +785,11 @@ impl SolarumApp {
                     LibOut::Assign(voice, k) => {
                         self.song.track_mut(voice).sound = CUSTOM + k as u8;
                     }
+                    LibOut::Dust(n) => {
+                        if let Some(lv) = self.luna.earn(n) {
+                            self.level_up(lv, now);
+                        }
+                    }
                     LibOut::Use(id) => {
                         if let (Some(sound), Some(v)) = (self.use_sample(id, now), self.library.get(id).map(|e| e.voice)) {
                             self.song.track_mut(v).sound = sound;
@@ -802,6 +824,7 @@ impl SolarumApp {
                         &self.recent_cache,
                         self.last_session.as_ref().map(|l| &l.song).zip(name.as_deref()),
                         update.as_deref(),
+                        &self.luna,
                     );
                 });
             if let Some(a) = act {
@@ -925,6 +948,70 @@ impl SolarumApp {
     }
 
     /// End of every frame: tell the engine what changed
+    /// Luna reached a level: a toast, and a line in the log
+    fn level_up(&mut self, level: usize, now: f64) {
+        self.luna_up = Some((level, now));
+        let line = format!("Level {level}! Luna got {}.", crate::luna::Luna::unlocked(level));
+        self.bunk(&line, now);
+    }
+
+    /// The level-up toast: it slides in at the top for a few seconds; a click dresses Luna up
+    fn luna_toast(&mut self, ctx: &egui::Context, now: f64) {
+        let Some((level, at)) = self.luna_up else { return };
+        let age = (now - at) as f32;
+        if !(0.0..6.0).contains(&age) {
+            self.luna_up = None;
+            return;
+        }
+        ctx.request_repaint();
+        let a = (age * 4.0).min(1.0).min((6.0 - age) * 2.0).clamp(0.0, 1.0);
+        let slide = (1.0 - (age * 3.0).min(1.0)).powi(3) * 30.0;
+        let size = vec2(440.0, 96.0);
+        let pos = pos2(ctx.screen_rect().center().x - size.x / 2.0, 22.0 - slide);
+        let ink = self.luna.ink();
+        let mut open = false;
+        egui::Area::new(egui::Id::new("luna-level-up"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(pos)
+            .show(ctx, |ui| {
+                let (r, resp) = ui.allocate_exact_size(size, egui::Sense::click());
+                let p = ui.painter();
+                p.rect_stroke(r.expand(3.0), 17.0, stroke(6.0, alpha(ink, 0.18 * a)), egui::StrokeKind::Inside);
+                p.rect_filled(r, 14.0, alpha(SPACE, 0.96 * a));
+                p.rect_stroke(r, 14.0, stroke(1.5, alpha(ink, a)), egui::StrokeKind::Inside);
+                let c = pos2(r.left() + 50.0, r.center().y - 8.0);
+                crate::face::halo(p, c, 36.0, ink, 0.3 * a);
+                self.luna.draw(p, c, 30.0, age, a, (age * 6.0).sin() * 0.5 + 0.5);
+                let x = r.left() + 100.0;
+                p.text(
+                    pos2(x, r.top() + 24.0),
+                    Align2::LEFT_CENTER,
+                    format!("{}  LEVEL UP  ·  {level}", ph::SPARKLE),
+                    bold(11.0),
+                    alpha(ink, a),
+                );
+                let got = crate::widgets::fit_text(
+                    p,
+                    &format!("Luna got {}", crate::luna::Luna::unlocked(level)),
+                    bold(18.0),
+                    r.right() - x - 16.0,
+                );
+                p.text(pos2(x, r.top() + 50.0), Align2::LEFT_CENTER, got, bold(18.0), alpha(TEXT, a));
+                p.text(
+                    pos2(x, r.top() + 74.0),
+                    Align2::LEFT_CENTER,
+                    "Click to dress Luna up",
+                    body(12.0),
+                    alpha(DIM, a),
+                );
+                open = resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked();
+            });
+        if open {
+            self.settings = true;
+            self.luna_up = None;
+        }
+    }
+
     fn finish_frame(&mut self, now: f64) {
         // Live effects: held with a key or the mouse
         for i in 0..Fx::ALL.len() {

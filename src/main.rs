@@ -14,6 +14,7 @@ mod home;
 mod library;
 mod library_ui;
 mod log;
+mod luna;
 mod midi;
 #[cfg(test)]
 mod offscreen;

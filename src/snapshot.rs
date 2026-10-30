@@ -23,6 +23,28 @@ mod tests {
         snap.save(&shapes, Path::new(&format!("target/snapshots/{name}.png")));
     }
 
+    /// The settings at the top: Luna's level and skins
+    #[test]
+    #[ignore]
+    fn render_settings_luna() {
+        let mut snap = Offscreen::retina(1360.0, 860.0, 2.0);
+        crate::theme::install(&snap.ctx);
+        let mut app = SolarumApp::headless(Song::default(), View::Orbit, false);
+        app.settings = true;
+        app.luna = crate::luna::Luna {
+            dust: 1100,
+            antenna: 2,
+            color: 3,
+            extra: 2,
+            ..Default::default()
+        };
+        let mut shapes = Vec::new();
+        for t in 0..4 {
+            shapes = snap.frame(t as f64 * 0.05, |ctx| app.ui(ctx));
+        }
+        snap.save(&shapes, Path::new("target/snapshots/settings_luna.png"));
+    }
+
     /// The settings, scrolled down to the support card at the bottom
     #[test]
     #[ignore]
@@ -337,6 +359,13 @@ mod tests {
         // Luna says hello as the computer comes on (render time is ~10 s)
         render("home", 1360.0, 860.0, |app| {
             app.home = true;
+            // Luna a few levels in: double antenna, shades
+            app.luna = crate::luna::Luna {
+                dust: 330,
+                antenna: 1,
+                extra: 1,
+                ..Default::default()
+            };
             app.last_session = Some(crate::app::Session {
                 song: crate::gen::generate(crate::song::Vibe::Acid, &Default::default(), &mut crate::rng::Rng::new(9)),
                 slots: [None; 12],

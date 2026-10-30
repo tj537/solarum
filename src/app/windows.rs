@@ -66,6 +66,72 @@ impl SolarumApp {
                 let max_h = ctx.screen_rect().height() - 200.0;
                 egui::ScrollArea::vertical().max_height(max_h).show(ui, |ui| {
                     ui.set_width(440.0);
+                    // Luna: how far it has come, and its skin – what's not unlocked yet shows its level
+                    let lv = self.luna.level();
+                    let (into, next) = self.luna.progress();
+                    let t = ui.input(|i| i.time) as f32;
+                    egui::Frame::new()
+                        .fill(SPACE)
+                        .stroke(stroke(1.0, alpha(self.luna.ink(), 0.45)))
+                        .corner_radius(12.0)
+                        .inner_margin(egui::Margin::same(14))
+                        .show(ui, |ui| {
+                            ui.set_width(ui.available_width() - 10.0);
+                            ui.horizontal_top(|ui| {
+                                let (r, _) = ui.allocate_exact_size(vec2(84.0, 96.0), egui::Sense::hover());
+                                let c = r.center() - vec2(0.0, 10.0);
+                                crate::face::halo(ui.painter(), c, 36.0, self.luna.ink(), 0.25);
+                                self.luna.draw(ui.painter(), c, 34.0, t, 1.0, (t * 2.0).sin().max(0.0));
+                                ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
+                                ui.vertical(|ui| {
+                                    ui.label(egui::RichText::new(format!("Luna  ·  Level {lv}")).font(bold(16.0)).color(TEXT));
+                                    let (bar, _) = ui.allocate_exact_size(vec2(300.0, 8.0), egui::Sense::hover());
+                                    ui.painter().rect_filled(bar, 4.0, PANEL_HI);
+                                    let fill = Rect::from_min_size(bar.min, vec2(bar.width() * into, bar.height()));
+                                    ui.painter().rect_filled(fill, 4.0, self.luna.ink());
+                                    let dust = match next {
+                                        Some(n) => format!("{} {} / {n} stardust to level {}", ph::SPARKLE, self.luna.dust, lv + 1),
+                                        None => format!("{} {} stardust – all unlocked", ph::SPARKLE, self.luna.dust),
+                                    };
+                                    ui.label(egui::RichText::new(dust).font(bold(12.0)).color(self.luna.ink()));
+                                    note(
+                                        ui,
+                                        "Stardust comes from playing (one every 20 seconds), picking a bred sound (+2) and keeping or saving a sound (+5). \
+                                         Every level brings Luna something new – and new lines.",
+                                    );
+                                });
+                            });
+                            ui.add_space(6.0);
+                            let mut luna = self.luna;
+                            let row = |ui: &mut Ui, title: &str, items: &[(&str, usize, Color32)], picked: &mut u8| {
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.add_sized(
+                                        vec2(70.0, 26.0),
+                                        egui::Label::new(egui::RichText::new(title).font(bold(11.0)).color(FAINT)),
+                                    );
+                                    for (k, &(name, need, col)) in items.iter().enumerate() {
+                                        let open = need <= lv;
+                                        let text = if open { name.to_owned() } else { format!("{}  {name} · {need}", ph::LOCK_SIMPLE) };
+                                        ui.add_enabled_ui(open, |ui| {
+                                            let resp = widgets::chip(ui, &text, *picked as usize == k, col);
+                                            let resp = if open { resp } else { resp.on_disabled_hover_text(format!("Unlocks at level {need}")) };
+                                            if resp.clicked() {
+                                                *picked = k as u8;
+                                            }
+                                        });
+                                    }
+                                });
+                            };
+                            let ink = luna.ink();
+                            let antennas: Vec<_> = crate::luna::ANTENNAS.iter().map(|a| (a.0, a.1, ink)).collect();
+                            let extras: Vec<_> = crate::luna::EXTRAS.iter().map(|e| (e.0, e.1, ink)).collect();
+                            row(ui, "ANTENNA", &antennas, &mut luna.antenna);
+                            row(ui, "COLOUR", &crate::luna::COLORS, &mut luna.color);
+                            row(ui, "EXTRA", &extras, &mut luna.extra);
+                            self.luna = luna;
+                        });
+                    ui.add_space(12.0);
+
                     let sound = match &self.audio {
                         Ok(a) => format!(
                             "{} · {} Hz – headphones are picked up within a few seconds",

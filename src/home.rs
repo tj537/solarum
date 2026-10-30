@@ -99,7 +99,14 @@ fn about(song: &Song) -> String {
 }
 
 /// The start screen; returns what was clicked. `demo` is shown when there's nothing from last time.
-pub fn home(ui: &mut Ui, sounds: usize, recent: &[Recent], last: Option<(&Song, &str)>, update: Option<&str>) -> Option<Action> {
+pub fn home(
+    ui: &mut Ui,
+    sounds: usize,
+    recent: &[Recent],
+    last: Option<(&Song, &str)>,
+    update: Option<&str>,
+    luna: &crate::luna::Luna,
+) -> Option<Action> {
     let mut action = None;
     let full = ui.max_rect();
     let p = ui.painter().clone();
@@ -139,6 +146,63 @@ pub fn home(ui: &mut Ui, sounds: usize, recent: &[Recent], last: Option<(&Song, 
     let shine = 0.16 + 0.05 * pulse + if sun_resp.hovered() { 0.08 } else { 0.0 };
     crate::planets::sun_ball(&p, sun, rs, warm, 0.0, shine, t);
     sun_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+
+    // Luna circles the sun like a little moon, its level under it; a click dresses it up
+    let orbit = vec2(rs * 2.05, rs * 1.32);
+    let path: Vec<egui::Pos2> = (0..=72)
+        .map(|i| {
+            let a = i as f32 / 72.0 * std::f32::consts::TAU;
+            sun + vec2(a.cos() * orbit.x, a.sin() * orbit.y)
+        })
+        .collect();
+    p.add(egui::Shape::dashed_line(&path, stroke(1.0, alpha(TEXT, 0.1)), 4.0, 6.0));
+    let a = t * 0.1 + 2.3;
+    let ls = (rs * 0.36).clamp(26.0, 40.0);
+    let lc = sun + vec2(a.cos() * orbit.x, a.sin() * orbit.y);
+    let luna_resp = ui.interact(
+        Rect::from_center_size(lc + vec2(0.0, ls * 0.3), vec2(ls * 2.4, ls * 2.6)),
+        ui.id().with("home_luna"),
+        Sense::click(),
+    );
+    let hot = luna_resp.hovered();
+    let ink = luna.ink();
+    let moon = lc + vec2(0.0, ls * 0.2);
+    p.circle_filled(moon, ls * 1.25, alpha(SPACE, 0.92));
+    p.circle_stroke(
+        moon,
+        ls * 1.25,
+        stroke(if hot { 2.0 } else { 1.0 }, alpha(ink, if hot { 0.9 } else { 0.45 })),
+    );
+    // the level's progress as an arc round the moon
+    let (into, _) = luna.progress();
+    let arc: Vec<egui::Pos2> = (0..=40)
+        .map(|i| {
+            let a = -std::f32::consts::FRAC_PI_2 + i as f32 / 40.0 * into * std::f32::consts::TAU;
+            moon + vec2(a.cos(), a.sin()) * (ls * 1.25 + 4.0)
+        })
+        .collect();
+    if into > 0.0 {
+        p.add(egui::Shape::line(arc, stroke(2.5, ink)));
+    }
+    luna.draw(&p, lc, ls, t, 1.0, if hot { (t * 6.0).sin() * 0.5 + 0.5 } else { 0.0 });
+    let tag = p.layout_no_wrap(format!("LV {}", luna.level()), bold(10.0), BG);
+    let tag_r = Rect::from_center_size(moon + vec2(0.0, ls * 1.25 + 12.0), tag.size() + vec2(12.0, 5.0));
+    p.rect_filled(tag_r, tag_r.height() / 2.0, ink);
+    p.galley(tag_r.center() - tag.size() / 2.0, tag, BG);
+    let dust = match luna.progress().1 {
+        Some(n) => format!("{} / {n} stardust", luna.dust),
+        None => format!("{} stardust – all unlocked", luna.dust),
+    };
+    if luna_resp
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(format!(
+            "Luna · level {} · {dust}\nPlay, breed and keep sounds to level up – click to dress Luna up",
+            luna.level()
+        ))
+        .clicked()
+    {
+        action = Some(Action::Settings);
+    }
 
     // The left: the name, then the buttons
     let mut y = hero.top();
