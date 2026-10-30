@@ -59,7 +59,7 @@
       "name": "Solarum",
       "alternateName": "Solarum drum machine",
       "description": "Solarum is a free, open-source techno drum machine, beat maker and sampler for Mac and Windows. Your groove is a little solar system: every track is an orbit round the sun, every step a planet. Pick a vibe and a mood instead of scales and chords, record, draw or import your own sounds, or switch on Luna, the robot in the auto mode, and it plays an endless techno set with breakdowns, build-ups and drops.",
-      "softwareVersion": "0.10.0",
+      "softwareVersion": "0.10.1",
       "url": "https://tj537.github.io/solarum/",
       "applicationCategory": "MultimediaApplication",
       "applicationSubCategory": "Drum machine",
@@ -124,10 +124,12 @@
         { "@type": "Question", "name": "How do I put my own sound into a beat?", "acceptedAnswer": { "@type": "Answer", "text": "Every sound belongs to one track: kick, clap, rim, hat, open hat, ride, bass or synth. When you finish a sound, pick its track and press Save. Then choose it in that track's sound menu under Your sounds, or press Use on … in SOUNDS. Your sound plays like a one-shot at the level of the built-in sounds; on bass and synth it follows the notes and the key." } },
         { "@type": "Question", "name": "Which audio files can I import?", "acceptedAnswer": { "@type": "Answer", "text": "WAV, AIFF, MP3, FLAC and OGG. Choose Import under + New sound, or simply drop the files onto the Solarum window. Each sound can be up to 30 seconds long." } },
         { "@type": "Question", "name": "Can I make a sound without a microphone?", "acceptedAnswer": { "@type": "Answer", "text": "Yes, draw it. Start from a blank drawing board or paint over a track's template – a kick's falling pitch, a clap's three slaps, a hat's hiss. Draw the pitch in one lane and the loudness in the other, pick Soft, Bright or Air and a length, and you hear it after every stroke. Pen, eraser and undo are right there." } },
+        { "@type": "Question", "name": "Can Solarum make a sound for me?", "acceptedAnswer": { "@type": "Answer", "text": "Yes – breed one. Under + New sound, choose Breed a sound: you hear four sounds for a track, click the one you like best and it gets four children, each a little different. After three or four rounds you have a sound of your own, with no drawing and no knobs. Next to it, Luna has three new sounds of the day for three different tracks – the same for everyone that day – to hear and keep with one click." } },
         { "@type": "Question", "name": "What can I change about a sound after recording it?", "acceptedAnswer": { "@type": "Answer", "text": "The editor works like a sampler: drag the white bars to cut the start and end, drag the top edge to fade in or out, change the pitch, make it thinner or darker with Tone, add lo-fi grit with Crush, or Reverse it. The waveform shows every change, Loop plays it over and over, everything can be undone, and the original audio is never touched." } },
         { "@type": "Question", "name": "Do my sounds come along when I send a project to a friend?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. A saved .solarum project carries the sounds it uses – up to 32 per project – so it plays the same on another computer. Projects from other people are checked before they play: oversized files are refused and packed sounds are limited to 30 seconds each." } },
         { "@type": "Question", "name": "Why can't Solarum hear my microphone?", "acceptedAnswer": { "@type": "Answer", "text": "Your computer has to allow it. On a Mac, macOS asks once whether Solarum may use the microphone; if you said no, open System Settings → Privacy & Security → Microphone and switch Solarum on. On Windows, open Settings → Privacy & security → Microphone and allow desktop apps to access it. Then pick the right input above the record button." } },
         { "@type": "Question", "name": "Who is Luna?", "acceptedAnswer": { "@type": "Answer", "text": "Luna is the little robot inside SOLAR OS, Solarum's auto mode. Switch it on and Luna plays an endless set like a DJ: grooves that change, breakdowns, build-ups and drops. It picks every change by ear, learns your taste from a thumb up or down, and answers commands like acid, drop, mood dark or bpm 135." } },
+        { "@type": "Question", "name": "What is stardust, and how does Luna level up?", "acceptedAnswer": { "@type": "Answer", "text": "Playing, breeding and keeping sounds earn Luna stardust: one every 20 seconds of playing (after an hour a day, one every 80), +2 for a bred sound you pick and +5 for a sound you keep, with a daily limit. Ten levels unlock new antennas, colours, shades and – at the top – wings, plus new lines Luna says while it plays. There is no shop and no money, only progress. Click Luna on the start screen to dress it up." } },
         { "@type": "Question", "name": "Which kinds of techno can Solarum play?", "acceptedAnswer": { "@type": "Answer", "text": "Ten vibes: Dub, Minimal, Melodic, Hypnotic, Electro, Peak time, Acid, Rave, Industrial and Hard – each with its own tempo, sounds and pattern rules." } },
         { "@type": "Question", "name": "Can I save my beats as an audio file?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. The record button (or the R key) records everything you hear – your beat, Luna's set, a whole AUTO SONG and the live effects – and saves it as a WAV file, ready to share or to use in other music software." } },
         { "@type": "Question", "name": "Can I play Solarum with a MIDI keyboard?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Plug one in, even while Solarum runs. Keys below middle C play the sounds (C kick, D clap, E rim, F hat, G open hat, A ride, B bass), keys from middle C up transpose bass and synth live, and the mod wheel, pitch bend and sustain pedal play acid, filter and echo." } },
@@ -504,7 +506,7 @@ footer a.kofi:hover { background: var(--acid); color: var(--space); }
 <header class="hero" id="top">
   <canvas id="sky" aria-hidden="true"></canvas>
   <div class="wrap">
-    <a class="new-pill reveal" href="#sounds"><b>New in 0.10</b>Record your own sounds <i>→</i></a>
+    <a class="new-pill reveal" href="#sounds"><b>New in 0.10.1</b>Breed your own sounds <i>→</i></a>
     <div class="eyebrow reveal">Free · Mac &amp; Windows · in development</div>
     <h1 class="display reveal d1">Solarum</h1>
     <p class="lead reveal d2"><b>Techno from another planet.</b> Board the ship, fly into a little solar system and make beats by touching planets – with 51 sounds from space or your very own. Easy, beautiful, for everyone.</p>
@@ -633,13 +635,18 @@ footer a.kofi:hover { background: var(--acid); color: var(--space); }
 
 <section id="sounds">
   <div class="wrap">
-    <div class="eyebrow reveal" style="color:var(--red)">New in 0.10 · your own sounds</div>
+    <div class="eyebrow reveal" style="color:var(--red)">New in 0.10.1 · breed your sounds</div>
     <h2 class="display reveal">Make it sound<br>like you.</h2>
-    <p class="sub reveal">Clap into your microphone, knock on the table, beatbox a kick – or draw a sound with the mouse. Solarum turns it into an instrument on one of its tracks, right next to the 51 built-in sounds. Open <b>SOUNDS</b> on the start screen and press <b>+ New sound</b>: <i>Start › Record or Draw › Finish</i>, with Cancel and Back always in the same place.</p>
+    <p class="sub reveal">Clap into your microphone, knock on the table, beatbox a kick – or draw a sound with the mouse. Solarum turns it into an instrument on one of its tracks, right next to the 51 built-in sounds. Or let Solarum breed one with you. Open <b>SOUNDS</b> on the start screen and press <b>+ New sound</b>: <i>Start › Breed, Record or Draw › Finish</i>, with Cancel and Back always in the same place – and Luna's three sounds of the day waiting on top.</p>
 
     <div class="sound-grid">
       <div class="ways reveal" role="tablist" aria-label="Ways to make a sound" data-viewer="sound-shots">
-        <button class="way" type="button" role="tab" aria-selected="true" style="--c:var(--red)">
+        <button class="way" type="button" role="tab" aria-selected="true" style="--c:var(--acid)">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="12" r="2.5"/><path d="M7.5 12c4 0 4-7 9-7M7.5 12h9M7.5 12c4 0 4 7 9 7"/><circle cx="19" cy="5" r="1.5"/><circle cx="19" cy="12" r="1.5"/><circle cx="19" cy="19" r="1.5"/></svg></span>
+          <b>Breed <small>NEW · NO KNOBS</small></b>
+          <span>Hear four sounds, click the one you like best – it gets four children. A few rounds and the sound is yours.</span>
+        </button>
+        <button class="way" type="button" role="tab" aria-selected="false" style="--c:var(--red)">
           <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg></span>
           <b>Record <small>MIC</small></b>
           <span>Pick your microphone or audio interface and press the big red button. Up to 30 seconds; the silence is trimmed and the level set for you.</span>
@@ -660,13 +667,14 @@ footer a.kofi:hover { background: var(--acid); color: var(--space); }
           <div class="window in">
             <div class="bar"><i></i><i></i><i></i></div>
             <div class="stage" id="sound-shots">
-              <img class="on" src="shot-record.jpg" width="1600" height="1011" loading="lazy" alt="A fresh recording in Solarum's editor: a yellow waveform that swells and tapers like a pine cone, with cut bars, the track picker and Save" data-cap="Record: your voice, a door, a glass – anything. When you stop, the take opens in the editor, trimmed and ready to cut.">
+              <img class="on" src="shot-breed.jpg" width="1600" height="1011" loading="lazy" alt="Breeding a sound in Solarum: round 4, four green acid sounds as cards labelled Shorter, More hits and Longer, and on the left the pick so far with its family line" data-cap="Breed: four children of your last pick, each a little different – the card says how. Click the best one, again and again.">
+              <img src="shot-record.jpg" width="1600" height="1011" loading="lazy" alt="A fresh recording in Solarum's editor: a yellow waveform that swells and tapers like a pine cone, with cut bars, the track picker and Save" data-cap="Record: your voice, a door, a glass – anything. When you stop, the take opens in the editor, trimmed and ready to cut.">
               <img src="shot-draw.jpg" width="1600" height="1011" loading="lazy" alt="Solarum's drawing board: a red pitch line falling like a kick drum above a fading loudness lane, with pen, eraser, undo and Soft, Bright and Air buttons" data-cap="Draw: higher is higher, gaps are silence. You hear it after every stroke – with Loop over and over.">
               <img src="shot-sounds.jpg" width="1600" height="1011" loading="lazy" alt="Solarum's sound editor: an orange waveform of a pot-and-pan loop with cut bars, the track picker, and cards for pitch, tone, crush and reverse" data-cap="Shape: cut, fade, pitch, tone, crush and reverse. The waveform shows the sound exactly as it will play.">
             </div>
           </div>
         </div>
-        <p class="shot-cap" data-cap-for="sound-shots">Record: your voice, a door, a glass – anything. When you stop, the take opens in the editor, trimmed and ready to cut.</p>
+        <p class="shot-cap" data-cap-for="sound-shots">Breed: four children of your last pick, each a little different – the card says how. Click the best one, again and again.</p>
         <div class="tools">
           <span style="--c:var(--kick)">Cut start &amp; end</span><span style="--c:var(--clap)">Fade in &amp; out</span><span style="--c:var(--rim)">Pitch</span><span style="--c:var(--hat)">Tone: thinner or darker</span><span style="--c:var(--ohat)">Crush</span><span style="--c:var(--ride)">Reverse</span><span style="--c:var(--bass)">Loop</span><span>Undo everything</span>
         </div>
@@ -692,6 +700,7 @@ footer a.kofi:hover { background: var(--acid); color: var(--space); }
         <li class="reveal" style="--c:var(--acid)"><span><b>New rhythms, any time.</b> Pick a vibe and press SHUFFLE: a fresh groove that follows the rules of techno, always clearly different from the last one.</span></li>
         <li class="reveal d1" style="--c:var(--red)"><span><b>Whole sets on its own.</b> Luna plays an endless set like a DJ: grooves that change, breakdowns, build-ups and drops, every cycle a little hotter. SOLAR OS shows the cycle ahead, and one ENERGY slider goes from <i>CHILL</i> to <i>TURN UP</i>.</span></li>
         <li class="reveal d2" style="--c:var(--ohat)"><span><b>Words instead of theory.</b> Pick a mood like <i>Dark</i>, <i>Euphoric</i> or <i>Dreamy</i> and the chords come with it. You don't need to know anything about music.</span></li>
+        <li class="reveal d3" style="--c:var(--bass)"><span><b>Levels up with you.</b> Playing, breeding and keeping sounds earn Luna stardust. Ten levels bring new antennas, colours, shades and wings – no shop, no money, only progress.</span></li>
         <li class="reveal d3" style="--c:var(--ride)"><span><b>Just type.</b> <code>acid</code>, <code>drop</code>, <code>mood dark</code>, <code>bpm 135</code>, <code>seed tom</code> for a beat from any word, or ask for a <code>joke</code>. <code>help</code> opens Luna's manual: click a command and it runs.</span></li>
       </ul>
     </div>
@@ -709,13 +718,13 @@ footer a.kofi:hover { background: var(--acid); color: var(--space); }
 
 <section id="new" style="padding-top:0">
   <div class="wrap">
-    <div class="eyebrow reveal">Solarum 0.10</div>
+    <div class="eyebrow reveal">Solarum 0.10.1</div>
     <h2 class="display reveal">What's new.</h2>
     <div class="news">
-      <div class="reveal" style="--c:var(--red)"><b>Your own sounds</b><p>Record, draw or import them, shape them in the editor and play them on any track. Projects take them along.</p></div>
-      <div class="reveal d1" style="--c:var(--clap)"><b>17 new sounds</b><p>51 in all, from kicks to supersaws, named for space – <i>Pulsar</i>, <i>Comet</i>, <i>Nebula</i> – and balanced so switching never jumps in volume.</p></div>
-      <div class="reveal d2" style="--c:var(--acid)"><b>Luna listens</b><p>Every change is picked by ear, a thumb up or down teaches it your taste, and the map shows where the drop lands.</p></div>
-      <div class="reveal d3" style="--c:var(--ohat)"><b>Sturdier</b><p>Saving never leaves half a file, projects from others are checked before they play, and a broken sound can't silence the engine.</p></div>
+      <div class="reveal" style="--c:var(--acid)"><b>Breed a sound</b><p>Hear four, click the best, it gets four children – a few rounds and the sound is yours. No drawing, no knobs.</p></div>
+      <div class="reveal d1" style="--c:var(--clap)"><b>Sounds of the day</b><p>Every day Luna breeds three new sounds for three tracks – the same for everyone. Hear them, keep them with one click.</p></div>
+      <div class="reveal d2" style="--c:var(--bass)"><b>Luna levels up</b><p>Stardust for playing, breeding and keeping: ten levels of antennas, colours, shades and wings. Luna can dance on the main screen too.</p></div>
+      <div class="reveal d3" style="--c:var(--red)"><b>Your own sounds</b><p>Since 0.10: record, draw or import them, shape them in the editor and play them on any track. Projects take them along.</p></div>
     </div>
     <p class="sub reveal" style="margin-top:28px;font-size:16px">All changes are in the <a href="https://github.com/tj537/solarum/releases" style="color:var(--acid)">release notes</a>.</p>
   </div>
@@ -811,12 +820,14 @@ footer a.kofi:hover { background: var(--acid); color: var(--space); }
       <details class="reveal"><summary><h3>How do I put my own sound into a beat?</h3></summary><p>Every sound belongs to one track: kick, clap, rim, hat, open hat, ride, bass or synth. When you finish a sound, pick its track and press <i>Save</i>. Then choose it in that track's sound menu under <i>Your sounds</i>, or press <i>Use on …</i> in SOUNDS. Your sound plays like a one-shot at the level of the built-in sounds; on bass and synth it follows the notes and the key.</p></details>
       <details class="reveal"><summary><h3>Which audio files can I import?</h3></summary><p>WAV, AIFF, MP3, FLAC and OGG. Choose <i>Import</i> under <i>+ New sound</i>, or simply drop the files onto the Solarum window. Each sound can be up to 30 seconds long.</p></details>
       <details class="reveal"><summary><h3>Can I make a sound without a microphone?</h3></summary><p>Yes, draw it. Start from a blank drawing board or paint over a track's template – a kick's falling pitch, a clap's three slaps, a hat's hiss. Draw the pitch in one lane and the loudness in the other, pick <i>Soft</i>, <i>Bright</i> or <i>Air</i> and a length, and you hear it after every stroke. Pen, eraser and undo are right there.</p></details>
+      <details class="reveal"><summary><h3>Can Solarum make a sound for me?</h3></summary><p>Yes – breed one. Under <i>+ New sound</i>, choose <i>Breed a sound</i>: you hear four sounds for a track, click the one you like best and it gets four children, each a little different. After three or four rounds you have a sound of your own, with no drawing and no knobs. Next to it, Luna has three new <i>sounds of the day</i> for three different tracks – the same for everyone that day – to hear and keep with one click.</p></details>
       <details class="reveal"><summary><h3>What can I change about a sound after recording it?</h3></summary><p>The editor works like a sampler: drag the white bars to cut the start and end, drag the top edge to fade in or out, change the pitch, make it thinner or darker with <i>Tone</i>, add lo-fi grit with <i>Crush</i>, or <i>Reverse</i> it. The waveform shows every change, <i>Loop</i> plays it over and over, everything can be undone, and the original audio is never touched.</p></details>
       <details class="reveal"><summary><h3>Do my sounds come along when I send a project to a friend?</h3></summary><p>Yes. A saved .solarum project carries the sounds it uses – up to 32 per project – so it plays the same on another computer. Projects from other people are checked before they play: oversized files are refused and packed sounds are limited to 30 seconds each.</p></details>
       <details class="reveal"><summary><h3>Why can't Solarum hear my microphone?</h3></summary><p>Your computer has to allow it. On a Mac, macOS asks once whether Solarum may use the microphone; if you said no, open <i>System Settings → Privacy &amp; Security → Microphone</i> and switch Solarum on. On Windows, open <i>Settings → Privacy &amp; security → Microphone</i> and allow desktop apps to access it. Then pick the right input above the record button.</p></details>
 
       <div class="faq-cat reveal" style="--c:var(--ohat)">Making music</div>
       <details class="reveal"><summary><h3>Who is Luna?</h3></summary><p>Luna is the little robot inside SOLAR OS, Solarum's auto mode. Switch it on and Luna plays an endless set like a DJ: grooves that change, breakdowns, build-ups and drops. It picks every change by ear, learns your taste from a thumb up or down, and answers commands like <code>acid</code>, <code>drop</code>, <code>mood dark</code> or <code>bpm 135</code>.</p></details>
+      <details class="reveal"><summary><h3>What is stardust, and how does Luna level up?</h3></summary><p>Playing, breeding and keeping sounds earn Luna stardust: one every 20 seconds of playing (after an hour a day, one every 80), +2 for a bred sound you pick and +5 for a sound you keep, with a daily limit. Ten levels unlock new antennas, colours, shades and – at the top – wings, plus new lines Luna says while it plays. There is no shop and no money, only progress. Click Luna on the start screen to dress it up.</p></details>
       <details class="reveal"><summary><h3>Which kinds of techno can Solarum play?</h3></summary><p>Ten vibes: Dub, Minimal, Melodic, Hypnotic, Electro, Peak time, Acid, Rave, Industrial and Hard – each with its own tempo, sounds and pattern rules.</p></details>
       <details class="reveal"><summary><h3>Can I save my beats as an audio file?</h3></summary><p>Yes. The record button (or the R key) records everything you hear – your beat, Luna's set, a whole AUTO SONG and the live effects – and saves it as a WAV file, ready to share or to use in other music software.</p></details>
       <details class="reveal"><summary><h3>Can I play Solarum with a MIDI keyboard?</h3></summary><p>Yes. Plug one in, even while Solarum runs. Keys below middle C play the sounds (C kick, D clap, E rim, F hat, G open hat, A ride, B bass), keys from middle C up transpose bass and synth live, and the mod wheel, pitch bend and sustain pedal play acid, filter and echo.</p></details>
