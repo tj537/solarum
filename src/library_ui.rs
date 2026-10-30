@@ -23,8 +23,8 @@ pub enum Out {
     Assign(Voice, usize),
     /// Give this sound a slot and put it on its track
     Use(u64),
-    /// Luna earned stardust (a bred sound picked, a sound kept or saved)
-    Dust(u32),
+    /// Luna earns stardust (a bred sound picked, a sound kept or saved)
+    Dust(crate::luna::Source),
 }
 
 /// Where you are while making a new sound: it takes the whole screen, one step at a time
@@ -566,10 +566,7 @@ impl LibraryUi {
         if let Some(e) = lib.get_mut(id) {
             e.draft = false;
             let name = e.name.clone();
-            self.say(
-                format!("Saved – {name} is in your sounds  ·  +{} {}", crate::luna::DUST_KEEP, ph::SPARKLE),
-                now,
-            );
+            self.say(format!("Saved – {name} is in your sounds{}", self.dust_note()), now);
         }
         self.unsaved = true;
         self.flow = None;
@@ -583,6 +580,14 @@ impl LibraryUi {
         self.open = true;
         self.selected = Some(id);
         self.replace = Some(id);
+    }
+
+    /// "  ·  +5 ✦" – the stardust keeping a sound brings Luna today (nothing past the day's limit)
+    fn dust_note(&self) -> String {
+        match self.luna.would_earn(crate::luna::Source::Keep, crate::luna::today()) {
+            0 => String::new(),
+            n => format!("  ·  +{n} {}", ph::SPARKLE),
+        }
     }
 
     fn say(&mut self, text: impl Into<String>, now: f64) {
@@ -1737,7 +1742,7 @@ impl LibraryUi {
                 {
                     self.stop(out);
                     self.save_draft(lib, id, now);
-                    out.push(Out::Dust(crate::luna::DUST_KEEP));
+                    out.push(Out::Dust(crate::luna::Source::Keep));
                 }
                 _ => {}
             }
@@ -1943,11 +1948,8 @@ impl LibraryUi {
             let id = lib.add(&name, voice, buf.data.clone());
             self.unsaved = true;
             self.selected = Some(id);
-            self.say(
-                format!("Kept – {name} is in your sounds  ·  +{} {}", crate::luna::DUST_KEEP, ph::SPARKLE),
-                now,
-            );
-            out.push(Out::Dust(crate::luna::DUST_KEEP));
+            self.say(format!("Kept – {name} is in your sounds{}", self.dust_note()), now);
+            out.push(Out::Dust(crate::luna::Source::Keep));
         }
         if let Some(id) = show {
             self.stop(out);
@@ -2210,7 +2212,7 @@ impl LibraryUi {
             b.round_back(now);
         } else if let Some(k) = picked {
             b.pick(k, now);
-            out.push(Out::Dust(crate::luna::DUST_PICK));
+            out.push(Out::Dust(crate::luna::Source::Pick));
             // the pointer is still there: the new child under it waits for the next hover
             b.hover = Some(k);
         } else if hovered != b.hover {

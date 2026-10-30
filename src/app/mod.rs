@@ -275,6 +275,9 @@ pub struct SolarumApp {
     pub luna: crate::luna::Luna,
     /// The last level up and when, for the toast
     pub luna_up: Option<(usize, f64)>,
+    /// Luna's own file (none in tests), and what's in it – written whenever that changes
+    luna_path: Option<PathBuf>,
+    luna_saved: crate::luna::Luna,
     /// The auto mode's last change, its track as it was before, and when it came – for the thumbs
     pub last_auto: Option<(gen::Change, crate::song::Track, f64)>,
     /// Luna's manual (type help) is open next to SOLAR OS
@@ -376,8 +379,10 @@ impl SolarumApp {
         app.keep_tempo = get("keep_tempo").unwrap_or(false);
         app.taste = cc.storage.and_then(|s| eframe::get_value(s, "taste")).unwrap_or_default();
         app.send(Cmd::Taste(app.taste));
-        app.luna = cc.storage.and_then(|s| eframe::get_value(s, "luna")).unwrap_or_default();
-        app.luna.sanitize();
+        app.luna_path = crate::luna::Luna::path();
+        let file = app.luna_path.as_deref().and_then(crate::luna::Luna::load);
+        app.luna = crate::luna::Luna::merge(file, cc.storage.and_then(|s| eframe::get_value(s, "luna")));
+        app.luna_saved = app.luna;
         app.shared.touches.store(get("touches").unwrap_or(true), Ordering::Relaxed);
         app.on_start = cc.storage.and_then(|s| eframe::get_value(s, "on_start")).unwrap_or(OnStart::Wait);
         // Straight into the music, if the settings say so
@@ -498,6 +503,8 @@ impl SolarumApp {
             taste: Default::default(),
             luna: Default::default(),
             luna_up: None,
+            luna_path: None,
+            luna_saved: Default::default(),
             last_auto: None,
             help_open: false,
             drive: 0.0,
@@ -719,9 +726,16 @@ impl SolarumApp {
         }
         // Playing earns Luna stardust
         if self.playing() {
-            if let Some(lv) = self.luna.play(dt) {
+            if let Some(lv) = self.luna.play(dt, crate::luna::today()) {
                 self.level_up(lv, now);
             }
+        }
+        // Luna's file follows every stardust and every change of skin
+        if !self.luna.same(&self.luna_saved) {
+            if let Some(path) = &self.luna_path {
+                let _ = self.luna.save(path);
+            }
+            self.luna_saved = self.luna;
         }
         self.lib_ui.luna = self.luna;
         self.luna_toast(ctx, now);
@@ -785,8 +799,8 @@ impl SolarumApp {
                     LibOut::Assign(voice, k) => {
                         self.song.track_mut(voice).sound = CUSTOM + k as u8;
                     }
-                    LibOut::Dust(n) => {
-                        if let Some(lv) = self.luna.earn(n) {
+                    LibOut::Dust(src) => {
+                        if let (_, Some(lv)) = self.luna.earn(src, crate::luna::today()) {
                             self.level_up(lv, now);
                         }
                     }

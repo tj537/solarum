@@ -14,11 +14,55 @@ use std::f32::consts::{PI, TAU};
 /// The stardust each level starts at (level 1 … 10)
 pub const LEVELS: [u32; 10] = [0, 30, 80, 160, 280, 450, 700, 1000, 1400, 2000];
 
-/// Seconds of playing for one stardust
+/// Seconds of playing for one stardust – for the first `PLAY_FULL` of a day, then `PLAY_SLOW`:
+/// a set left running all night shouldn't max Luna out
 pub const PLAY_SECONDS: f32 = 20.0;
-/// Stardust for picking a bred sound, and for keeping or saving one
+pub const PLAY_FULL: u32 = 180;
+pub const PLAY_SLOW: f32 = 80.0;
+/// Stardust for picking a bred sound, and for keeping or saving one – at most `*_DAY` a day,
+/// so clicking through the rounds doesn't either
 pub const DUST_PICK: u32 = 2;
 pub const DUST_KEEP: u32 = 5;
+pub const PICK_DAY: u32 = 40;
+pub const KEEP_DAY: u32 = 60;
+
+/// Where stardust comes from
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Source {
+    Play,
+    Pick,
+    Keep,
+}
+
+/// Stardust by where it came from
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Tally {
+    #[serde(default)]
+    pub play: u32,
+    #[serde(default)]
+    pub pick: u32,
+    #[serde(default)]
+    pub keep: u32,
+}
+
+impl Tally {
+    fn of(&mut self, src: Source) -> &mut u32 {
+        match src {
+            Source::Play => &mut self.play,
+            Source::Pick => &mut self.pick,
+            Source::Keep => &mut self.keep,
+        }
+    }
+}
+
+/// Today, as days since 1970 (UTC) – the daily limits start over with it
+pub fn today() -> u32 {
+    (std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+        / 86_400) as u32
+}
 
 /// The antennas: name and the level that unlocks it
 pub const ANTENNAS: [(&str, usize); 4] = [("Classic", 1), ("Double", 3), ("Star", 6), ("Dish", 9)];
@@ -63,6 +107,13 @@ pub struct Luna {
     /// Seconds played that aren't stardust yet
     #[serde(default)]
     pub(crate) played: f32,
+    /// All the stardust by where it came from, and today's (for the daily limits)
+    #[serde(default)]
+    pub total: Tally,
+    #[serde(default)]
+    pub today: Tally,
+    #[serde(default)]
+    pub day: u32,
 }
 
 impl Luna {
@@ -83,22 +134,108 @@ impl Luna {
         }
     }
 
-    /// Add stardust; the new level if that was a level up
-    pub fn earn(&mut self, dust: u32) -> Option<usize> {
+    /// Add stardust from `src`; the new level if that was a level up
+    fn add(&mut self, src: Source, dust: u32) -> Option<usize> {
         let before = self.level();
         self.dust = self.dust.saturating_add(dust);
+        *self.total.of(src) += dust;
+        *self.today.of(src) += dust;
         (self.level() > before).then(|| self.level())
     }
 
-    /// `dt` seconds of playing
-    pub fn play(&mut self, dt: f32) -> Option<usize> {
+    /// A new day: today's limits start over
+    fn roll(&mut self, day: u32) {
+        if self.day != day {
+            self.day = day;
+            self.today = Tally::default();
+        }
+    }
+
+    /// The stardust a pick or a keep would bring on `day` (0 once the day's limit is reached)
+    pub fn would_earn(&self, src: Source, day: u32) -> u32 {
+        let used = if self.day == day { self.today } else { Tally::default() };
+        match src {
+            Source::Pick => DUST_PICK.min(PICK_DAY.saturating_sub(used.pick)),
+            Source::Keep => DUST_KEEP.min(KEEP_DAY.saturating_sub(used.keep)),
+            Source::Play => 1,
+        }
+    }
+
+    /// A bred sound picked or a sound kept on `day`: the stardust it brought, and the new
+    /// level if that was a level up
+    pub fn earn(&mut self, src: Source, day: u32) -> (u32, Option<usize>) {
+        let n = self.would_earn(src, day);
+        self.roll(day);
+        if n == 0 {
+            return (0, None);
+        }
+        (n, self.add(src, n))
+    }
+
+    /// `dt` seconds of playing on `day`
+    pub fn play(&mut self, dt: f32, day: u32) -> Option<usize> {
+        self.roll(day);
         self.played += dt.clamp(0.0, 1.0);
-        let whole = (self.played / PLAY_SECONDS) as u32;
-        if whole == 0 {
+        let per = if self.today.play < PLAY_FULL { PLAY_SECONDS } else { PLAY_SLOW };
+        if self.played < per {
             return None;
         }
-        self.played -= whole as f32 * PLAY_SECONDS;
-        self.earn(whole)
+        self.played -= per;
+        self.add(Source::Play, 1)
+    }
+
+    /// Today's stardust by where it came from (nothing yet if the last earning was another day)
+    pub fn today_tally(&self, day: u32) -> Tally {
+        if self.day == day {
+            self.today
+        } else {
+            Tally::default()
+        }
+    }
+
+    /// The same progress and skin – what's worth saving (not the seconds in between)
+    pub fn same(&self, o: &Luna) -> bool {
+        Luna { played: 0.0, ..*self } == Luna { played: 0.0, ..*o }
+    }
+
+    /// Where Luna lives: its own little file next to the settings, so a reset of those
+    /// doesn't take it
+    pub fn path() -> Option<std::path::PathBuf> {
+        eframe::storage_dir("Solarum").map(|d| d.join("luna.ron"))
+    }
+
+    /// Read it. A file that can't be read is moved aside (`luna.broken.ron`) instead of
+    /// being written over, so nothing is lost for good.
+    pub fn load(path: &std::path::Path) -> Option<Luna> {
+        let text = std::fs::read_to_string(path).ok()?;
+        match ron::from_str::<Luna>(&text) {
+            Ok(l) => Some(l),
+            Err(_) => {
+                let _ = std::fs::rename(path, path.with_extension("broken.ron"));
+                None
+            }
+        }
+    }
+
+    /// Write it (atomically – a crash mid-write leaves the old file)
+    pub fn save(&self, path: &std::path::Path) -> std::io::Result<()> {
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let text = ron::ser::to_string_pretty(&Luna { played: 0.0, ..*self }, Default::default()).map_err(std::io::Error::other)?;
+        crate::file::write_atomic(path, text.as_bytes())
+    }
+
+    /// From its file, or the copy in the settings (where it lived first) – whichever came
+    /// further
+    pub fn merge(file: Option<Luna>, settings: Option<Luna>) -> Luna {
+        let mut l = match (file, settings) {
+            (Some(f), Some(s)) if s.dust > f.dust => s,
+            (Some(f), _) => f,
+            (None, s) => s.unwrap_or_default(),
+        };
+        l.sanitize();
+        l
     }
 
     pub fn ink(&self) -> Color32 {
@@ -308,19 +445,10 @@ mod tests {
     fn stardust_levels_and_skins() {
         let mut l = Luna::default();
         assert_eq!(l.level(), 1);
-        assert_eq!(l.earn(29), None);
-        assert_eq!(l.earn(1), Some(2));
+        assert_eq!(l.add(Source::Keep, 29), None);
+        assert_eq!(l.add(Source::Keep, 1), Some(2));
         assert_eq!(l.progress(), (0.0, Some(80)));
-        // playing: one stardust every PLAY_SECONDS, a level up when it gets there
-        let mut ups = Vec::new();
-        for _ in 0..((50.0 * PLAY_SECONDS + 0.5) * 60.0) as usize {
-            if let Some(lv) = l.play(1.0 / 60.0) {
-                ups.push(lv);
-            }
-        }
-        assert_eq!(l.dust, 80);
-        assert_eq!(ups, vec![3]);
-        l.earn(10_000);
+        l.add(Source::Keep, 10_000);
         assert_eq!(l.level(), 10);
         assert_eq!(l.progress(), (1.0, None));
         // everything unlocked at the top; nothing worn that isn't unlocked
@@ -335,7 +463,56 @@ mod tests {
         assert_eq!((fresh.antenna, fresh.color, fresh.extra), (0, 0, 0));
         assert_eq!(Luna::unlocked(4), "shades");
         assert_eq!(Luna::unlocked(10), "the colour plasma and crown");
-        // every level brings something
         assert!((2..=10).all(|lv| Luna::unlocked(lv) != "new lines to drop" || LINES.iter().any(|l| l.0 == lv)));
+    }
+
+    #[test]
+    fn daily_limits_and_play_rate() {
+        let mut l = Luna::default();
+        // picks: 2 each until 40 a day, then nothing – the next day it starts over
+        let got: u32 = (0..30).map(|_| l.earn(Source::Pick, 100).0).sum();
+        assert_eq!(got, PICK_DAY);
+        assert_eq!(l.would_earn(Source::Pick, 100), 0);
+        assert_eq!(l.earn(Source::Pick, 101).0, DUST_PICK);
+        assert_eq!(l.today.pick, DUST_PICK);
+        assert_eq!(l.total.pick, PICK_DAY + DUST_PICK);
+        // playing: full rate for the first PLAY_FULL a day, then slower
+        let mut p = Luna::default();
+        let frames = |secs: f32| (secs * 60.0 + 30.0) as usize;
+        for _ in 0..frames(PLAY_FULL as f32 * PLAY_SECONDS) {
+            p.play(1.0 / 60.0, 7);
+        }
+        assert_eq!(p.dust, PLAY_FULL);
+        for _ in 0..frames(10.0 * PLAY_SLOW) {
+            p.play(1.0 / 60.0, 7);
+        }
+        assert_eq!(p.dust, PLAY_FULL + 10);
+        assert_eq!(p.total.play, p.dust);
+    }
+
+    #[test]
+    fn saved_in_its_own_file_safely() {
+        let dir = std::env::temp_dir().join(format!("solarum-luna-{}", std::process::id()));
+        let path = dir.join("luna.ron");
+        let mut l = Luna::default();
+        l.earn(Source::Keep, 3);
+        l.played = 7.0;
+        l.save(&path).unwrap();
+        let back = Luna::load(&path).unwrap();
+        assert!(back.same(&l));
+        assert_eq!(back.played, 0.0);
+        // a broken file is moved aside, not lost
+        std::fs::write(&path, "not ron").unwrap();
+        assert!(Luna::load(&path).is_none());
+        assert!(dir.join("luna.broken.ron").exists());
+        // the one that came further wins (the settings' copy from before the file)
+        let old = Luna {
+            dust: 500,
+            ..Default::default()
+        };
+        assert_eq!(Luna::merge(Some(back), Some(old)).dust, 500);
+        assert_eq!(Luna::merge(Some(old), Some(back)).dust, 500);
+        assert_eq!(Luna::merge(None, None).dust, 0);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

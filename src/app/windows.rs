@@ -94,10 +94,24 @@ impl SolarumApp {
                                         None => format!("{} {} stardust – all unlocked", ph::SPARKLE, self.luna.dust),
                                     };
                                     ui.label(egui::RichText::new(dust).font(bold(12.0)).color(self.luna.ink()));
+                                    let (total, today) = (self.luna.total, self.luna.today_tally(crate::luna::today()));
+                                    note(ui, &format!("From playing {} · breeding {} · keeping {}", total.play, total.pick, total.keep));
                                     note(
                                         ui,
-                                        "Stardust comes from playing (one every 20 seconds), picking a bred sound (+2) and keeping or saving a sound (+5). \
-                                         Every level brings Luna something new – and new lines.",
+                                        &format!(
+                                            "Today: breeding {} of {} · keeping {} of {} · playing {}{}",
+                                            today.pick,
+                                            crate::luna::PICK_DAY,
+                                            today.keep,
+                                            crate::luna::KEEP_DAY,
+                                            today.play,
+                                            if today.play >= crate::luna::PLAY_FULL { " (slower now)" } else { "" }
+                                        ),
+                                    );
+                                    note(
+                                        ui,
+                                        "Stardust comes from playing (one every 20 seconds – after an hour a day, every 80), \
+                                         picking a bred sound (+2) and keeping or saving a sound (+5). Every level brings Luna something new.",
                                     );
                                 });
                             });
