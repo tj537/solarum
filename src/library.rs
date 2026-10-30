@@ -786,6 +786,72 @@ pub fn litter(parent: &Genes, round: usize, rng: &mut crate::rng::Rng) -> [Genes
     kids
 }
 
+/// Luna's sound of the day: a track and a sound bred a few rounds from its template, all
+/// from the day (days since 1970), so everyone gets the same one on the same day
+pub struct DaySound {
+    pub day: u64,
+    pub voice: Voice,
+    pub genes: Genes,
+    pub name: String,
+    /// What Luna says about it
+    pub says: &'static str,
+}
+
+const DAY_WORDS: [&str; 16] = [
+    "Solar", "Lunar", "Neon", "Cosmic", "Velvet", "Static", "Orbit", "Nova", "Comet", "Pulsar", "Quasar", "Nebula", "Ion", "Plasma",
+    "Eclipse", "Stardust",
+];
+
+const DAY_SAYS: [&str; 8] = [
+    "Yo, cooked this one fresh for you today.",
+    "Bro, this hits different. Trust.",
+    "Found it behind the moon. It's yours, fam.",
+    "No cap, I bred this all night.",
+    "Today's pick. Put it on a track and send it.",
+    "Ayo, this one's straight from the mothership.",
+    "Lowkey my favourite yet. Don't tell the others.",
+    "Fresh out the oven, brother. Still warm.",
+];
+
+impl DaySound {
+    pub fn of(day: u64) -> DaySound {
+        let mut rng = crate::rng::Rng::new(day.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0x5011_A6D0);
+        let voice = *rng.pick(&Voice::ALL);
+        let mut genes = Genes::of(voice);
+        for round in 0..4 {
+            let kids = litter(&genes, round, &mut rng);
+            genes = kids[rng.below(4) as usize];
+        }
+        let word = rng.pick(&DAY_WORDS);
+        DaySound {
+            day,
+            voice,
+            genes,
+            name: format!("{word} {}", voice.name().to_lowercase()),
+            says: rng.pick(&DAY_SAYS),
+        }
+    }
+
+    /// Today's (UTC)
+    pub fn today() -> DaySound {
+        DaySound::of(now_secs() / 86_400)
+    }
+
+    /// The day as "Oct 30"
+    pub fn date(&self) -> String {
+        // days since 1970 → year, month, day (Howard Hinnant's civil_from_days)
+        let z = self.day as i64 + 719_468;
+        let doe = z.rem_euclid(146_097);
+        let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let d = doy - (153 * mp + 2) / 5 + 1;
+        let m = if mp < 10 { mp + 3 } else { mp - 9 };
+        const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        format!("{} {d}", MONTHS[(m - 1) as usize])
+    }
+}
+
 // ───────────────────────────── Files ─────────────────────────────
 
 /// Any audio file → mono at `SAMPLE_SR`, at most `MAX_SECONDS`
@@ -1090,6 +1156,25 @@ mod tests {
                 (t * 900.0).sin() * (-t / 0.03).exp() * 0.8 + rng.noise() * 0.001
             })
             .collect()
+    }
+
+    #[test]
+    fn the_sound_of_the_day_changes_daily_and_stays_clean() {
+        let a = DaySound::of(20_391);
+        assert_eq!(a.date(), "Oct 30");
+        assert_eq!(DaySound::of(0).date(), "Jan 1");
+        assert_eq!(a.genes, DaySound::of(20_391).genes);
+        let days: Vec<DaySound> = (20_000..20_030).map(DaySound::of).collect();
+        assert!(days.windows(2).all(|w| w[0].genes != w[1].genes));
+        assert!(
+            Voice::ALL.iter().all(|&v| days.iter().any(|d| d.voice == v)),
+            "every track gets its day"
+        );
+        for d in &days {
+            let x = render_drawing(&d.genes.drawing());
+            let peak = x.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+            assert!(peak <= 1.0 && peak > 0.05, "{}: peak {peak}", d.name);
+        }
     }
 
     #[test]
