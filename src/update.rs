@@ -34,8 +34,21 @@ pub fn check(wake: impl Fn() + Send + 'static) -> Receiver<Release> {
     rx
 }
 
+/// curl where the system keeps it – never one that happens to come first on the search path
+fn curl() -> std::path::PathBuf {
+    #[cfg(windows)]
+    {
+        let root = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
+        std::path::Path::new(&root).join("System32").join("curl.exe")
+    }
+    #[cfg(not(windows))]
+    {
+        std::path::PathBuf::from("/usr/bin/curl")
+    }
+}
+
 fn fetch() -> Option<String> {
-    let mut cmd = std::process::Command::new("curl");
+    let mut cmd = std::process::Command::new(curl());
     cmd.args(["-sSfL", "--max-time", "8", "-H", "Accept: application/vnd.github+json", API_URL]);
     #[cfg(windows)]
     {

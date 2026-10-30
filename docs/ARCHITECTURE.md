@@ -42,7 +42,7 @@ src/
   controls.rs   the right panel's pads: `character` (dark × acid, the puck at the acid the engine plays), `space_card` (echo rings), `pump_card` (the ducking), `pitch_card` (KEY: a slider over the twelve keys), `drive_card`, `fx_art` (the picture on each effect button, drawn through `widgets::fx_button`'s `art`; its clock `fx_phase` only runs on hover or while the effect is on, `boost` while held) and `fx_burst` (the outline flying out on a press), `eq_curve` (three points on a shelf + bell + shelf curve), `filter_pad` (low-pass ← off → high-pass × resonance, springs back – so no grid like the character pad, its halves faintly tinted and the puck on a rubber band to its home, the puck at the engine's filter when no hand is on it). The space/pump/drive cards name their value in a word (`in_words`) and show the number while dragged
   wav.rs        16-bit WAV writer
   rng.rs        PCG32 random numbers (seedable → repeatable tests and renders)
-  update.rs     update check: asks the GitHub API for the latest release tag (via the system's curl)
+  update.rs     update check: asks the GitHub API for the latest release tag (via the system's curl, by its full path: `/usr/bin/curl`, `%SystemRoot%\System32\curl.exe`)
   offscreen.rs  software rasterizer for egui (tests only)
   snapshot.rs   screenshot tests (ignored by default)
 ```
