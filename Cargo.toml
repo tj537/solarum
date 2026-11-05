@@ -13,7 +13,7 @@ repository = "https://github.com/tj537/solarum"
 eframe = { version = "0.31", features = ["persistence"] }
 egui-phosphor = "0.9"
 serde = { version = "1", features = ["derive"] }
-cpal = "0.17"
+cpal = "0.18"
 midir = "0.11"
 rfd = "0.17"
 ron = "0.12"
