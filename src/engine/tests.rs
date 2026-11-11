@@ -1262,3 +1262,47 @@ fn stutter_repeats_two_steps() {
     let rims = shared.hits[Voice::Rim.index()].load(Ordering::Relaxed) - before;
     assert_eq!(rims, 4, "step 5 repeats every other step");
 }
+
+#[test]
+fn lunas_sets_keep_air_and_play_riffs() {
+    // 96 bars of the auto mode in a calm, a middle and a hard vibe: never the wall of
+    // everything at once, and a 303 line stays a riff (a handful of notes within an octave)
+    for (vibe, seed) in [(Vibe::Minimal, 1), (Vibe::Acid, 2), (Vibe::Peak, 3), (Vibe::Hard, 4)] {
+        let mut song = gen::generate(vibe, &Default::default(), &mut Rng::new(seed));
+        song.auto = true;
+        let mut e = Engine::new(8_000.0, song, Shared::new(), None, seed);
+        e.handle(Cmd::Play);
+        let mut buf = vec![0.0; 2 * (e.step_len() * STEPS as f64) as usize];
+        let (mut crowd, mut tracks) = (0.0, 0);
+        for bar in 0..96 {
+            e.render(&mut buf);
+            let s = e.song;
+            let on = |v: Voice| !s.track(v).mute && s.track(v).hits() > 0;
+            let extras = gen::EXTRAS.into_iter().filter(|&v| on(v)).count();
+            // (one over for a moment: the energy brings its own tracks back)
+            assert!(extras <= gen::extras_cap(vibe) + 1, "{vibe:?} bar {bar}: {extras} extras");
+            tracks += Voice::ALL.into_iter().filter(|&v| on(v)).count();
+            crowd += crate::ear::hear(&s).crowd;
+            let synth = s.track(Voice::Acid);
+            if synth.sound < 2 && synth.hits() > 0 {
+                let mut notes: Vec<i8> = synth.steps.iter().filter(|st| st.on).map(|st| st.note).collect();
+                notes.sort();
+                notes.dedup();
+                assert!(
+                    notes.len() <= 5 && notes[notes.len() - 1] - notes[0] <= 12,
+                    "{vibe:?} bar {bar}: {notes:?}"
+                );
+            }
+        }
+        assert!(
+            crowd / 96.0 < 0.1,
+            "{vibe:?}: {:.0} % of the steps are a wall",
+            crowd / 96.0 * 100.0
+        );
+        assert!(
+            tracks as f32 / 96.0 < 6.8,
+            "{vibe:?}: {:.1} tracks on average",
+            tracks as f32 / 96.0
+        );
+    }
+}

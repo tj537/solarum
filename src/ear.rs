@@ -27,7 +27,8 @@ const CANDIDATES: usize = 6;
 /// What a groove sounds like, in numbers
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Hearing {
-    /// Hits per bar without the kick (ghosts and chance steps count for what they play)
+    /// Hits per bar without the kick (ghosts and chance steps count for what they play,
+    /// closed hats half)
     pub density: f32,
     /// Share of the bass notes that land on a kick
     pub clash: f32,
@@ -52,7 +53,8 @@ pub fn hear(song: &Song) -> Hearing {
         let mut at_once = 0;
         for v in Voice::ALL.into_iter().filter(|&v| v != Voice::Kick) {
             let x = on(song.track(v), i);
-            density += x;
+            // Closed hats run in the background: sixteen of them aren't sixteen events
+            density += if v == Voice::Hat { x * 0.5 } else { x };
             if x >= 0.75 {
                 at_once += 1;
             }
@@ -73,7 +75,7 @@ pub fn hear(song: &Song) -> Hearing {
 
 /// How many hits a bar wants at this energy (without the kick), `push` −1…1 on top
 pub fn density_goal(energy: f32, push: f32) -> f32 {
-    16.0 + 30.0 * energy.clamp(0.0, 1.0) + 8.0 * push.clamp(-1.0, 1.0)
+    12.0 + 16.0 * energy.clamp(0.0, 1.0) + 6.0 * push.clamp(-1.0, 1.0)
 }
 
 /// How far the groove should have wandered from its theme `progress` (0…1) into the groove

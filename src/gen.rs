@@ -41,20 +41,6 @@ fn from_positions(pos: &[usize]) -> Track {
     t
 }
 
-/// Chord changes per half bar, as scale degrees: i–i, i–VI, i–iv, i–VII, i–v
-const HALF_BAR_CHORDS: [[i32; 2]; 5] = [[0, 0], [0, 5], [0, 3], [0, -1], [0, 4]];
-
-/// The song's chord progression – derived from key and scale, so bass and synth
-/// agree even when only one of them is rolled again
-fn progression(song: &Song) -> [i32; 2] {
-    // A song-wide progression moves bar by bar already – then the bar itself stays on one chord
-    if song.prog != 0 {
-        return [0, 0];
-    }
-    let k = song.root as usize + song.scale as usize * 5;
-    HALF_BAR_CHORDS[k % HALF_BAR_CHORDS.len()]
-}
-
 /// The moods (indices into `MOODS`) that suit a vibe – a groove always has one of them
 pub fn moods_for(vibe: Vibe) -> &'static [usize] {
     // Dark, Hypnotic, Deep, Sad, Euphoric, Dreamy, Epic, Sunny, Mysterious
@@ -87,6 +73,8 @@ pub fn grow_target(song: &Song, rng: &mut Rng) -> Song {
         tt.len = fresh.len;
         tt.mute = false;
     }
+    // Not everything at once: what Luna adds leaves the groove some air
+    settle_extras(&mut target, rng, |v| song.track(v).hits() == 0 && !song.track(v).lock);
     target
 }
 
@@ -130,7 +118,40 @@ pub fn generate_keeping(vibe: Vibe, m: &Macros, rng: &mut Rng, keep: &[Option<Tr
         *song.track_mut(v) = track_for(v, vibe, drive, &song, rng);
         song.track_mut(v).volume = vol;
     }
+    settle_extras(&mut song, rng, |v| keep[v.index()].is_none());
     song
+}
+
+/// The tracks that come and go around the core (kick, clap, hat, bass)
+pub const EXTRAS: [Voice; 4] = [Voice::Rim, Voice::OpenHat, Voice::Ride, Voice::Acid];
+
+/// How many of the extras play at once. A groove needs air: with everything on, nothing
+/// stands out – the big-room vibes carry one more than the rest.
+pub fn extras_cap(vibe: Vibe) -> usize {
+    match vibe.rules() {
+        Vibe::Peak | Vibe::Rave | Vibe::Industrial | Vibe::Hard => 3,
+        _ => 2,
+    }
+}
+
+fn plays(song: &Song, v: Voice) -> bool {
+    let t = song.track(v);
+    !t.mute && t.hits() > 0
+}
+
+fn extras_on(song: &Song) -> usize {
+    EXTRAS.iter().filter(|&&v| plays(song, v)).count()
+}
+
+/// Mutes extras until no more than `extras_cap` play – only tracks that `may` be touched,
+/// and never the synth in the vibes that are about it
+fn settle_extras(song: &mut Song, rng: &mut Rng, may: impl Fn(Voice) -> bool) {
+    let lead = matches!(song.vibe.rules(), Vibe::Acid | Vibe::Dub | Vibe::Melodic | Vibe::Rave);
+    while extras_on(song) > extras_cap(song.vibe) {
+        let out = pick_if(rng, &EXTRAS, |v| may(v) && plays(song, v) && !(lead && v == Voice::Acid));
+        let Some(v) = out else { break };
+        song.track_mut(v).mute = true;
+    }
 }
 
 /// Shuffle: three new grooves of the vibe, and the one that differs most from `now`, so
@@ -170,49 +191,49 @@ fn sounds_for(v: Voice, vibe: Vibe) -> &'static [u8] {
     use Vibe::*;
     let vibe = vibe.rules();
     match v {
+        // The plain, proven sounds come up most; the odd ones (cowbell, tom, blip, zap, bell,
+        // lo-fi clap, hoover, organ) are a spice for the vibes they belong to
         // 909, 808, Hard, Deep, Punch, Rumble, Distort
         Voice::Kick => match vibe {
-            Dub => &[3, 1, 3, 5],
+            Dub => &[3, 1, 3],
             Minimal => &[4, 0, 3],
-            Melodic => &[0, 3, 4],
-            Hypnotic | Custom => &[0, 3, 0],
+            Melodic | Hypnotic | Custom => &[0, 3, 0],
             Electro => &[1],
             Peak | Acid => &[0, 4, 0],
-            Rave => &[2, 0],
+            Rave => &[0, 2, 0],
             Industrial => &[2, 0, 2, 6],
-            Hard => &[2, 6],
+            Hard => &[2, 6, 2],
         },
         // Clap, Snare, Big clap, Snap, Noise, Lo-fi
         Voice::Clap => match vibe {
-            Dub | Minimal => &[3, 0, 5],
-            Melodic => &[2, 0],
-            Hypnotic | Custom => &[0, 3],
+            Dub | Minimal => &[0, 3, 0],
+            Melodic => &[0, 2, 0],
+            Hypnotic | Custom => &[0, 0, 3],
             Electro => &[1],
             Peak => &[0, 2],
-            Acid => &[0, 1],
-            Rave => &[1, 2],
-            Industrial => &[1, 0, 4],
-            Hard => &[0, 1, 2, 4],
+            Acid => &[0, 0, 1],
+            Rave => &[0, 1, 2],
+            Industrial => &[0, 1, 0, 4],
+            Hard => &[0, 1, 2],
         },
         // Rim, Cowbell, Clave, Tom, Blip, Conga, Zap
         Voice::Rim => match vibe {
-            Dub => &[0, 4],
-            Minimal => &[0, 2, 4],
-            Melodic => &[2, 0, 3, 5],
-            Hypnotic | Custom => &[0, 3],
-            Electro => &[1, 2, 6],
-            Peak => &[0, 3],
-            Acid => &[0, 1],
-            Rave => &[1, 0],
-            Industrial | Hard => &[3, 0, 6],
+            Dub => &[0, 0, 5],
+            Minimal => &[0, 2, 0, 4],
+            Melodic => &[0, 2, 5],
+            Hypnotic | Custom => &[0, 0, 2, 5],
+            Electro => &[1, 2, 0],
+            Peak | Acid => &[0, 0, 2],
+            Rave => &[0, 2, 1],
+            Industrial | Hard => &[0, 3, 0],
         },
         // 909, 808, Shaker, Tick, Metal, Crisp
         Voice::Hat => match vibe {
-            Dub => &[2, 1],
-            Minimal => &[3, 0, 2, 5],
+            Dub => &[2, 1, 0],
+            Minimal => &[0, 3, 5, 2],
             Melodic => &[2, 0],
             Electro => &[1],
-            Hard | Industrial => &[0, 4],
+            Hard | Industrial => &[0, 4, 0],
             _ => &[0, 1, 0],
         },
         // 909, 808, Sizzle, Long, Metal
@@ -220,42 +241,41 @@ fn sounds_for(v: Voice, vibe: Vibe) -> &'static [u8] {
             Electro => &[1],
             Dub => &[1, 2],
             Melodic | Minimal => &[0, 2, 3],
-            Industrial | Hard => &[0, 4],
+            Industrial | Hard => &[0, 4, 0],
             _ => &[0, 0, 1],
         },
         // Ride, Bell, Dark, Crash, Shimmer
         Voice::Ride => match vibe {
-            Minimal => &[1, 0, 4],
             Dub => &[2],
-            Electro => &[1],
+            Electro => &[0, 1],
             Melodic => &[0, 4],
             _ => &[0, 2, 0],
         },
         // Rolling, Sub, Reese, Pulse, Donk, FM, Growl
         Voice::Bass => match vibe {
             Dub => &[1],
-            Minimal => &[1, 3, 0, 5],
-            Melodic => &[1, 2],
-            Hypnotic | Custom => &[0, 2, 0],
-            Electro => &[3, 1, 5],
-            Peak => &[0, 3],
+            Minimal => &[1, 0, 3],
+            Melodic => &[1, 0, 2],
+            Hypnotic | Custom => &[0, 0, 2],
+            Electro => &[3, 1],
+            Peak => &[0, 3, 0],
             Acid => &[0, 1],
-            Rave => &[2, 4],
+            Rave => &[2, 0, 4],
             Industrial => &[0, 2, 6],
-            Hard => &[4, 0, 6],
+            Hard => &[0, 4, 6, 0],
         },
         // 303 saw, 303 square, Stab, Pluck, Hoover, Pad, Organ, Supersaw
         Voice::Acid => match vibe {
-            Dub => &[2, 5],
-            Minimal => &[3, 1, 2],
-            Melodic => &[3, 3, 2, 5, 7],
+            Dub => &[2, 2, 5],
+            Minimal => &[3, 2, 3],
+            Melodic => &[3, 3, 5, 7],
             Hypnotic | Custom => &[0, 3, 2],
-            Electro => &[1, 3],
+            Electro => &[1, 3, 0],
             Peak => &[2, 0, 7],
             Acid => &[0, 1, 0],
-            Rave => &[4, 2, 6],
-            Industrial => &[0, 4],
-            Hard => &[4, 2],
+            Rave => &[2, 4, 6, 2],
+            Industrial => &[0, 2, 0],
+            Hard => &[2, 0, 4],
         },
     }
 }
@@ -363,12 +383,11 @@ fn clap(vibe: Vibe, e: f32, rng: &mut Rng) -> Track {
 
 fn rim(vibe: Vibe, e: f32, song: &Song, rng: &mut Rng) -> Track {
     let k = match vibe {
-        Vibe::Minimal => rng.range(3, 6),
-        Vibe::Industrial | Vibe::Electro => rng.range(4, 7),
-        Vibe::Dub => rng.range(1, 3),
-        _ => rng.range(2, 5),
+        Vibe::Industrial | Vibe::Electro => rng.range(3, 5),
+        Vibe::Dub => rng.range(1, 2),
+        _ => rng.range(2, 4),
     } as usize
-        + (e * 2.0) as usize;
+        + (e * 1.5) as usize;
     let mut t = from_mask(euclid(k, STEPS, rng.below(16) as usize));
     // Rims shouldn't sit on the kick or the clap
     let clap = song.track(Voice::Clap);
@@ -462,7 +481,7 @@ fn open_hat(vibe: Vibe, e: f32, rng: &mut Rng) -> Track {
 fn ride(vibe: Vibe, e: f32, rng: &mut Rng) -> Track {
     match vibe {
         Vibe::Peak | Vibe::Industrial | Vibe::Hard | Vibe::Rave => {
-            let mut t = if e > 0.5 {
+            let mut t = if e > 0.8 {
                 from_positions(&[0, 2, 4, 6, 8, 10, 12, 14])
             } else {
                 from_positions(&[2, 6, 10, 14])
@@ -500,28 +519,20 @@ fn bass(vibe: Vibe, e: f32, song: &Song, rng: &mut Rng) -> Track {
         Vibe::Electro => rng.pick(&[&[2usize, 3, 7, 11, 14][..], &[1, 4, 7, 9, 12, 14], &[3, 4, 7, 11, 12, 15]]),
     };
     let mut t = from_positions(template);
-    // The bass plays the root of the chord the synths play over it, so they always agree
-    let prog = progression(song);
-    // Folded back below the root when a chord takes it too high
-    let fold = |n: i8| if n > 7 { n - 12 } else { n };
-    for (i, s) in t.steps.iter_mut().enumerate() {
-        if !s.on {
-            continue;
-        }
-        let home = fold(scale.shift(0, prog[i / 8]));
-        s.note = home;
-        // Mostly the root; a few octave jumps and fifths for movement
-        if rng.chance(0.12 + e * 0.1) {
-            s.note = home + 12;
-        } else if rng.chance(0.08) {
-            s.note = fold(scale.shift(0, prog[i / 8] + 4));
-        }
-        s.accent = i % 4 == 2;
+    // The root, and one or two places in the half bar that jump an octave – the same in
+    // both halves, so it is a figure and not a stumble. Now and then the bar ends a fifth down.
+    let mut up = [false; 8];
+    let jumps = usize::from(rng.chance(0.4 + e * 0.3)) + usize::from(rng.chance(0.2));
+    for _ in 0..jumps {
+        up[*rng.pick(&[2usize, 3, 6, 7])] = true;
     }
-    if matches!(vibe, Vibe::Minimal) && rng.chance(0.5) {
-        // Answer phrase: the first half an octave up on the chord's sixth below
-        for (i, s) in t.steps.iter_mut().enumerate().take(8).filter(|(_, s)| s.on) {
-            s.note = fold(scale.shift(0, prog[i / 8] - 2)) + 12;
+    for (i, s) in t.steps.iter_mut().enumerate() {
+        s.note = if up[i % 8] { 12 } else { 0 };
+        s.accent = s.on && i % 4 == 2;
+    }
+    if rng.chance(0.2) {
+        if let Some(s) = t.steps.iter_mut().rev().take(3).find(|s| s.on) {
+            s.note = scale.shift(0, 4) - 12;
         }
     }
     // Never on top of a kick: they would fight for the low end
@@ -548,37 +559,33 @@ pub fn synth_family(sound: u8) -> u8 {
 
 fn synth_line(vibe: Vibe, e: f32, song: &Song, rng: &mut Rng) -> Track {
     match synth_family(song.track(Voice::Acid).sound) {
-        1 => stabs(vibe, song, rng),
+        1 => stabs(vibe, rng),
         2 => arp(e, song, rng),
         3 => hoover(song, rng),
-        4 => pads(song, rng),
+        4 => pads(rng),
         _ => acid(vibe, e, song, rng),
     }
 }
 
 /// Pad chords: one per half bar or per bar, held until the next
-fn pads(song: &Song, rng: &mut Rng) -> Track {
-    let pos: &[usize] = rng.pick(&[&[0usize, 8][..], &[0], &[0, 6, 8, 14]]);
-    let mut t = from_positions(pos);
-    let prog = progression(song);
-    for (i, s) in t.steps.iter_mut().enumerate().filter(|(_, s)| s.on) {
-        s.note = song.scale.shift(0, prog[i / 8]);
-    }
-    t
+fn pads(rng: &mut Rng) -> Track {
+    from_positions(rng.pick(&[&[0usize, 8][..], &[0], &[0, 6, 8, 14]]))
 }
 
-/// Chord stabs on the off-beats, one chord per half bar
-fn stabs(vibe: Vibe, song: &Song, rng: &mut Rng) -> Track {
+/// The octave above the bass, where the synth lines live
+const SYNTH_ROOT: i8 = 12;
+
+/// Chord stabs on the off-beats
+fn stabs(vibe: Vibe, rng: &mut Rng) -> Track {
     let pos: &[usize] = if matches!(vibe, Vibe::Dub) {
         rng.pick(&[&[3usize, 10][..], &[2, 10], &[3, 6, 11], &[2, 7, 10, 13]])
     } else {
         rng.pick(&[&[2usize, 6, 10, 14][..], &[3, 6, 11, 14], &[2, 5, 10, 13], &[0, 3, 6, 10, 12]])
     };
     let mut t = from_positions(pos);
-    let prog = progression(song);
-    for (i, s) in t.steps.iter_mut().enumerate().filter(|(_, s)| s.on) {
-        s.note = song.scale.shift(0, prog[i / 8]) + 12;
-        s.accent = rng.chance(0.3);
+    for s in t.steps.iter_mut() {
+        s.note = SYNTH_ROOT;
+        s.accent = s.on && rng.chance(0.3);
     }
     t
 }
@@ -586,60 +593,86 @@ fn stabs(vibe: Vibe, song: &Song, rng: &mut Rng) -> Track {
 /// A plucked arpeggio walking up and down the chord
 fn arp(e: f32, song: &Song, rng: &mut Rng) -> Track {
     let mut t = Track::default();
-    let prog = progression(song);
     let shape: &[i32] = rng.pick(&[&[0, 2, 4, 7][..], &[0, 4, 2, 4], &[0, 2, 4, 2], &[0, 7, 4, 2], &[4, 2, 0, 2]]);
     let eighths = e < 0.45 || rng.chance(0.3);
     let lift = if rng.chance(0.4) { 12 } else { 0 };
     for (i, s) in t.steps.iter_mut().enumerate() {
+        let k = if eighths { i / 2 } else { i };
+        s.note = song.scale.shift(0, shape[k % shape.len()]) + SYNTH_ROOT + lift;
         if eighths && i % 2 == 1 {
             continue;
         }
         s.on = !(i % 4 == 0 && rng.chance(0.25));
-        let k = if eighths { i / 2 } else { i };
-        s.note = song.scale.shift(0, prog[i / 8] + shape[k % shape.len()]) + 12 + lift;
         s.accent = i % 4 == 2 || rng.chance(0.15);
     }
     t.steps[0].on = true;
     t
 }
 
-/// A rave hoover riff: few long notes with slides
+/// A rave hoover riff: four long notes that make a little tune, with slides
 fn hoover(song: &Song, rng: &mut Rng) -> Track {
     let pos: &[usize] = rng.pick(&[&[0usize, 3, 6, 10][..], &[0, 6, 8, 14], &[2, 6, 10, 14], &[0, 3, 8, 11]]);
+    let tune: &[i32; 4] = rng.pick(&[[0, 0, 2, 0], [0, -1, 0, 2], [0, 2, 4, 2], [0, 0, -1, 0], [0, 4, 2, 0]]);
     let mut t = from_positions(pos);
-    let degrees = [0, 0, 2, -1, 4, 3];
-    let prog = progression(song);
-    for (i, s) in t.steps.iter_mut().enumerate().filter(|(_, s)| s.on) {
-        s.note = song.scale.shift(0, prog[i / 8] + *rng.pick(&degrees)) + 12;
-        s.slide = rng.chance(0.3);
-        s.accent = rng.chance(0.4);
+    let mut k = 0;
+    for s in t.steps.iter_mut() {
+        s.note = song.scale.shift(0, tune[k % 4]) + SYNTH_ROOT;
+        if s.on {
+            k += 1;
+            s.slide = rng.chance(0.3);
+            s.accent = rng.chance(0.4);
+        }
     }
     t
 }
 
-/// A 303-style line: notes from the scale, accents, slides and octave jumps. On every
-/// beat it lands on a note of the chord (root, third or fifth), in between it wanders.
+/// A 303-style line, built like a riff and not like a random walk: only a few notes (the
+/// root, its octave and two colours from the scale), a half-bar cell that repeats, and one
+/// note of the second half changed – the riff asks, then answers. The beat lands on the root.
 pub fn acid(vibe: Vibe, e: f32, song: &Song, rng: &mut Rng) -> Track {
+    let colour = |degree: i32| SYNTH_ROOT + song.scale.shift(0, degree).rem_euclid(12);
+    let (a, b) = *rng.pick(&[(4, 2), (4, 6), (2, 4), (6, 4), (2, 6), (4, 1)]);
+    let pool = [SYNTH_ROOT, SYNTH_ROOT + 12, colour(a), colour(b)];
+    // The cell: which of its eight steps play, and which note of the pool
+    let mut cell = [None::<usize>; 8];
+    cell[0] = Some(0);
+    let more = 2 + (e * 2.5) as usize + usize::from(vibe == Vibe::Acid);
+    for _ in 0..more {
+        if let Some(i) = pick_if(rng, &[1usize, 2, 3, 4, 5, 6, 7], |i| cell[i].is_none()) {
+            cell[i] = Some(if i == 4 { 0 } else { *rng.pick(&[0usize, 0, 1, 2, 2, 3]) });
+        }
+    }
     let mut t = Track::default();
-    let scale = song.scale;
-    let prog = progression(song);
-    let density = 0.45 + e * 0.3 + if matches!(vibe, Vibe::Acid) { 0.1 } else { 0.0 };
-    let mut degree = 0i32;
     for (i, s) in t.steps.iter_mut().enumerate() {
-        s.on = i == 0 || rng.chance(density);
+        s.on = cell[i % 8].is_some();
+        s.note = pool[cell[i % 8].unwrap_or(0)];
+    }
+    if let Some(i) = pick_if(rng, &[9usize, 10, 11, 13, 14, 15], |i| t.steps[i].on) {
+        t.steps[i].note = pool[*rng.pick(&[1usize, 2, 3])];
+    }
+    // Accents on the octave and some off-beats; a slide or two into a note that moves
+    let mut slides = 0;
+    for i in 0..STEPS {
+        let before = t.steps[(i + STEPS - 1) % STEPS];
+        let s = &mut t.steps[i];
         if !s.on {
             continue;
         }
-        degree = if i % 4 == 0 {
-            *rng.pick(&[0, 0, 2, 4])
-        } else {
-            (degree + rng.range(-2, 2)).clamp(-2, 6)
-        };
-        s.note = scale.shift(0, prog[i / 8] + degree) + if rng.chance(0.22) { 12 } else { 0 } + 12;
-        s.accent = rng.chance(0.28);
-        s.slide = i > 0 && rng.chance(0.22);
+        s.accent = s.note == SYNTH_ROOT + 12 || (i % 4 == 2 && rng.chance(0.4));
+        if i > 0 && before.on && before.note != s.note && slides < 2 && rng.chance(0.5) {
+            s.slide = true;
+            slides += 1;
+        }
     }
     t
+}
+
+/// The notes of `fresh` on the rhythm of `t`, step by step – a note keeps its place in
+/// the bar, so a line written around the beat stays around the beat
+fn renote(t: &mut Track, fresh: &Track) {
+    for (s, f) in t.steps.iter_mut().zip(&fresh.steps) {
+        s.note = f.note;
+    }
 }
 
 /// What the auto mode just did – shown in the UI
@@ -820,35 +853,36 @@ fn big_change(song: &mut Song, rng: &mut Rng, mutes: bool, recent: &mut Recent) 
     let m = song.macros;
     let roll = rng.f32();
     let muted = song.track(v).mute;
-    // A muted track coming back is a strong move – the synth more often than the rest
-    let bring_in = mutes && muted && roll < if v == Voice::Acid { 0.6 } else { 0.4 };
-    if bring_in {
-        song.track_mut(v).mute = false;
-        return Some(Change::Unmuted(v));
+    // A muted track coming back is a strong move – the synth more often than the rest.
+    // An extra with no room left takes the place of another one.
+    let (extra, on, cap) = (EXTRAS.contains(&v), extras_on(song), extras_cap(song.vibe));
+    if mutes && muted && roll < if v == Voice::Acid { 0.6 } else { 0.4 } {
+        let full = extra && on >= cap;
+        let out = pick_if(rng, &EXTRAS, |x| full && x != v && free(x) && plays(song, x));
+        if !full || out.is_some() {
+            if let Some(w) = out {
+                song.track_mut(w).mute = true;
+            }
+            song.track_mut(v).mute = false;
+            return Some(Change::Unmuted(v));
+        }
     }
-    if mutes && !muted && v != Voice::Bass && roll < 0.15 {
-        // Take one out – or, with only four left, bring another one in
+    if mutes && !muted && v != Voice::Bass {
+        // One out: always when more extras play than the groove carries, now and then otherwise
         let playing = EVOLVING.iter().filter(|&&x| !song.track(x).mute).count();
-        if playing > 4 {
+        if (extra && on > cap) || (roll < 0.15 && playing > 4 && (!extra || on > 1)) {
             song.track_mut(v).mute = true;
             return Some(Change::Muted(v));
-        }
-        if let Some(w) = pick_if(rng, &EVOLVING, |x| free(x) && recent.fresh(x) && song.track(x).mute) {
-            song.track_mut(w).mute = false;
-            return Some(Change::Unmuted(w));
         }
     }
     if MELODIC.contains(&v) && roll < 0.6 {
         // Same rhythm, new notes
         let fresh = track_for(v, song.vibe, m.energy, song, rng);
-        let t = song.track_mut(v);
-        let mut notes = fresh.steps.iter().filter(|s| s.on).map(|s| s.note).cycle();
-        for s in t.steps.iter_mut().filter(|s| s.on) {
-            s.note = notes.next().unwrap_or(s.note);
-        }
+        renote(song.track_mut(v), &fresh);
         return Some(Change::NewNotes(v));
     }
-    if roll > 0.75 {
+    // (rarely: a sound that changes every few phrases is restless)
+    if roll > 0.88 {
         // Another sound that suits the vibe (the synth gets a line made for its new sound)
         let old = song.track(v).sound;
         if let Some(new) = pick_if(rng, sounds_for(v, song.vibe), |s| s != old) {
@@ -885,11 +919,7 @@ pub fn refit_notes(song: &mut Song, rng: &mut Rng) {
 /// New notes on the same rhythm for one track, fitting the vibe and the chords
 pub fn new_notes(song: &mut Song, v: Voice, rng: &mut Rng) {
     let fresh = track_for(v, song.vibe, song.macros.energy, song, rng);
-    let t = song.track_mut(v);
-    let mut fresh_notes = fresh.steps.iter().filter(|s| s.on).map(|s| s.note).cycle();
-    for s in t.steps.iter_mut().filter(|s| s.on) {
-        s.note = fresh_notes.next().unwrap_or(s.note);
-    }
+    renote(song.track_mut(v), &fresh);
 }
 
 /// What the energy does to the hats in the auto mode, written into the pattern: soft ghost
@@ -943,11 +973,7 @@ pub fn vary(song: &mut Song, rng: &mut Rng) -> Option<Change> {
     if roll < 0.4 {
         if let Some(v) = pick_if(rng, &MELODIC, free) {
             let fresh = track_for(v, song.vibe, song.macros.energy, song, rng);
-            let t = song.track_mut(v);
-            let mut notes = fresh.steps.iter().filter(|s| s.on).map(|s| s.note).cycle();
-            for s in t.steps.iter_mut().filter(|s| s.on) {
-                s.note = notes.next().unwrap_or(s.note);
-            }
+            renote(song.track_mut(v), &fresh);
             return Some(Change::NewNotes(v));
         }
     }
@@ -1126,24 +1152,31 @@ mod tests {
         for vibe in Vibe::ALL {
             for _ in 0..40 {
                 let s = generate(vibe, &Macros::default(), &mut rng);
-                let prog = progression(&s);
-                // The bass plays the chord's root or fifth (in some octave) under every half bar
+                // The bass plays the root (in two octaves) or ends on the fifth below
+                let fifth = s.scale.shift(0, 4) - 12;
                 for (i, st) in s.track(Voice::Bass).steps.iter().enumerate().filter(|(_, st)| st.on) {
-                    let root = s.scale.shift(0, prog[i / 8]).rem_euclid(12);
-                    let fifth = s.scale.shift(0, prog[i / 8] + 4).rem_euclid(12);
-                    let sixth = s.scale.shift(0, prog[i / 8] - 2).rem_euclid(12);
-                    let n = st.note.rem_euclid(12);
-                    assert!(n == root || n == fifth || n == sixth, "{vibe:?} bass step {i}: {}", st.note);
+                    assert!([0, 12, fifth].contains(&st.note), "{vibe:?} bass step {i}: {}", st.note);
                 }
-                // A 303 line lands on a chord note on every beat
+                // A 303 line is a riff: the beat lands on the root, a handful of notes, all
+                // within an octave and in the scale
                 let synth = s.track(Voice::Acid);
                 if synth.sound < 2 {
                     for i in (0..STEPS).step_by(4).filter(|&i| synth.steps[i].on) {
-                        let chord = [0, 2, 4].map(|d| s.scale.shift(0, prog[i / 8] + d).rem_euclid(12));
-                        assert!(chord.contains(&synth.steps[i].note.rem_euclid(12)), "{vibe:?} synth step {i}");
+                        assert_eq!(synth.steps[i].note, SYNTH_ROOT, "{vibe:?} synth step {i}");
                     }
+                    let mut notes: Vec<i8> = synth.steps.iter().filter(|st| st.on).map(|st| st.note).collect();
+                    notes.sort();
+                    notes.dedup();
+                    assert!(
+                        notes.len() <= 4 && notes[notes.len() - 1] - notes[0] <= 12,
+                        "{vibe:?} synth notes {notes:?}"
+                    );
+                    assert!(notes.iter().all(|&n| s.scale.shift(n, 0) == n), "{vibe:?} synth notes {notes:?}");
+                    assert!(synth.steps[0].on && synth.hits() <= 12);
                     assert_eq!(synth.len, 16);
                 }
+                // The groove has air: only so many of the extra tracks play at once
+                assert!(extras_on(&s) <= extras_cap(vibe), "{vibe:?}: {} extras", extras_on(&s));
                 // Rims stay off the kick and the clap
                 for i in 0..STEPS {
                     let rim = s.track(Voice::Rim).steps[i].on;

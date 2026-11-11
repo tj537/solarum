@@ -1695,7 +1695,7 @@ impl Engine {
                 on = false;
             }
             // (only on a hat that plays something – an empty track stays silent)
-            if !step.on && touches && voice == Voice::Hat && energy > 0.6 && track.hits() > 0 && h < (energy - 0.6) * 1.5 {
+            if !step.on && touches && voice == Voice::Hat && energy > 0.7 && track.hits() > 0 && h < (energy - 0.7) * 0.8 {
                 on = true;
                 vel *= 0.5;
             }
