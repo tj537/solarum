@@ -1868,8 +1868,9 @@ impl Engine {
         // Break zone: the lower the energy, the more closed and spacious the sound
         let es_coef = 1.0 - (-1.0 / (0.12 * sr)).exp();
         let break_space = 1.0 + ((BREAK_ZONE - self.energy_smooth) / BREAK_ZONE).clamp(0.0, 1.0) * 1.2;
-        // Darkness closes the master tone filter – all the way down to a muffled 1.5 kHz
-        let tone = 18_000.0 * 0.1f32.powf(dark * dark * 1.08);
+        // Darkness closes the master tone filter – all the way down to a muffled 1.5 kHz, but
+        // only in its upper half: where DARK starts (0.45) the hats keep their air
+        let tone = 18_000.0 * 0.1f32.powf(dark.powi(3) * 1.08);
         self.tone_l.set(tone, 0.6, sr);
         self.tone_r.tune_like(&self.tone_l);
         // Chord stabs live in the echo (dub)
@@ -2373,14 +2374,51 @@ mod tests {
     }
 
     #[test]
-    fn renders_loud_clean_audio_for_every_vibe() {
+    fn every_vibe_sounds_like_a_mix_not_a_brick() {
+        // Three grooves of every vibe, heard like an ear would (`listen`): loud enough, never
+        // clipped, not squashed flat, no offset, lows that carry without drowning the rest,
+        // highs that are there, and a stereo picture that is neither mono nor falling apart
+        use crate::listen;
         for (i, vibe) in Vibe::ALL.into_iter().enumerate() {
-            let song = gen::generate(vibe, &Default::default(), &mut Rng::new(i as u64));
-            let buf = render_offline(&song, 4, 44_100, 1);
-            assert!(buf.iter().all(|x| x.is_finite()));
-            let (peak, rms) = stats(&buf);
-            assert!(peak <= 1.0, "{vibe:?} clips: {peak}");
-            assert!(rms > 0.05, "{vibe:?} too quiet: {rms}");
+            for seed in 0..3u64 {
+                let song = gen::generate(vibe, &Default::default(), &mut Rng::new(i as u64 * 10 + seed));
+                let buf = render_offline(&song, 8, 44_100, 1);
+                assert!(buf.iter().all(|x| x.is_finite()));
+                let h = listen::hear(&buf[..buf.len() - 44_100 * 4], 44_100.0);
+                let what = format!("{vibe:?} {seed}: {}", h.line());
+                assert!(h.peak <= crate::master::CEILING * song.master + 1e-4, "clips – {what}");
+                assert!((-18.0..=-9.5).contains(&h.lufs), "loudness – {what}");
+                assert!(h.crest_db >= 8.5, "squashed – {what}");
+                assert!(h.dc < 1e-3, "offset – {what}");
+                assert!((-24.0..=-5.0).contains(&h.side_db), "stereo – {what}");
+                let [sub, bass, _, mid, pres, air] = h.bands;
+                assert!(sub < -1.0 && bass < -2.0, "the lows drown the rest – {what}");
+                assert!(sub.max(bass) > -8.0, "no low end – {what}");
+                assert!(mid.max(pres) > -22.0 && air > -26.0, "dull – {what}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_sounds_of_a_track_are_about_equally_loud() {
+        // Switching a track's sound changes its colour, not the mix: every sound within
+        // 3.5 dB (as the ear weighs it) of the middle one
+        let base = gen::generate(Vibe::Peak, &Default::default(), &mut Rng::new(11));
+        for (i, v) in Voice::ALL.into_iter().enumerate() {
+            let mut loud: Vec<(f32, &str)> = (0..v.sounds().len())
+                .map(|sound| {
+                    let buf = render_offline(&levels::solo(&base, i, sound as u8), 2, 44_100, 1);
+                    (crate::listen::loudness(&buf[..buf.len() - 44_100 * 4], 44_100.0), v.sounds()[sound])
+                })
+                .collect();
+            loud.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let middle = loud[loud.len() / 2].0;
+            for (lufs, name) in loud {
+                assert!(
+                    (lufs - middle).abs() < 3.5,
+                    "{v:?} {name}: {lufs:.1} LUFS, the others around {middle:.1}"
+                );
+            }
         }
     }
 
@@ -3514,6 +3552,25 @@ mod levels {
         }
     }
 
+    /// `base` with only track `i` playing, on `sound`, dry and at full energy – one sound alone
+    pub fn solo(base: &Song, i: usize, sound: u8) -> Song {
+        let mut s = *base;
+        for (j, t) in s.tracks.iter_mut().enumerate() {
+            t.mute = j != i;
+        }
+        s.tracks[i].sound = sound;
+        if !s.tracks[i].steps.iter().any(|st| st.on) {
+            // the groove left this track empty: off-beats, so every sound gets measured
+            for st in s.tracks[i].steps.iter_mut().skip(2).step_by(4) {
+                st.on = true;
+            }
+        }
+        s.macros.space = 0.0;
+        s.macros.dark = 0.0;
+        s.macros.energy = 1.0; // the ride only plays from 70
+        s
+    }
+
     /// Prints the loudness of each track – and each of its sounds – on its own, for balancing the mix:
     /// `cargo test --release print_levels -- --ignored --nocapture`
     #[test]
@@ -3522,20 +3579,7 @@ mod levels {
         let base = gen::generate(Vibe::Peak, &Default::default(), &mut Rng::new(11));
         for (i, v) in Voice::ALL.into_iter().enumerate() {
             for sound in 0..v.sounds().len() {
-                let mut s = base;
-                for (j, t) in s.tracks.iter_mut().enumerate() {
-                    t.mute = j != i;
-                }
-                s.tracks[i].sound = sound as u8;
-                if !s.tracks[i].steps.iter().any(|st| st.on) {
-                    // the groove left this track empty: off-beats, so every sound gets measured
-                    for st in s.tracks[i].steps.iter_mut().skip(2).step_by(4) {
-                        st.on = true;
-                    }
-                }
-                s.macros.space = 0.0;
-                s.macros.dark = 0.0;
-                s.macros.energy = 1.0; // the ride only plays from 70
+                let s = solo(&base, i, sound as u8);
                 let buf = render_offline(&s, 4, 44_100, 1);
                 let body = &buf[..buf.len() - 44_100 * 4]; // without the tail
                 let h = crate::listen::hear(body, 44_100.0);
