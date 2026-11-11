@@ -480,7 +480,8 @@ pub struct Song {
     pub auto: bool,
     /// Bars between two auto changes (1–16)
     pub auto_bars: u8,
-    /// Auto mode moves the energy itself (off once you take the energy fader)
+    /// No longer read: the engine decides who steers the energy (`Engine::steers_energy`).
+    /// Kept in the file format: older versions of Solarum need it to open a newer save.
     pub curve: bool,
     /// Automatic build-ups get effects (low-pass, gate, echo) and phrase ends sometimes an
     /// effect moment – off: classic build-ups and plain fills only

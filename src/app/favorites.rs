@@ -106,7 +106,6 @@ impl SolarumApp {
             self.rec_sr = self.audio.as_ref().map_or(44_100, |a| a.sample_rate);
         }
         self.song.auto = false;
-        self.song.curve = true;
         self.song_fallback = self.song;
         self.song_form = Some(form);
         self.send_arrangement();

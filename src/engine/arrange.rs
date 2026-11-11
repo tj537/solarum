@@ -410,7 +410,6 @@ impl Engine {
         s.master = self.song.master;
         s.auto = self.song.auto && self.arrangement.is_none();
         s.auto_bars = self.song.auto_bars;
-        s.curve = self.song.curve;
         s.auto_fx = self.song.auto_fx;
         s.eq = self.song.eq;
         s.macros.energy = self.song.macros.energy;
@@ -529,7 +528,6 @@ impl Engine {
         if sec.part == Part::Peak && same {
             gen::new_chapter(&mut self.song, &mut self.auto_rng, false);
         }
-        self.song.curve = true;
         self.energy_goal = sec.part.energy(0, sec.bars as u64);
         if sec.part == Part::Peak {
             self.song.macros.energy = self.energy_goal;

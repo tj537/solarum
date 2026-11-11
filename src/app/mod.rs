@@ -52,7 +52,6 @@ fn keep_live_settings(mut song: Song, now: &Song) -> Song {
     song.master = now.master;
     song.auto = now.auto;
     song.auto_bars = now.auto_bars;
-    song.curve = now.curve;
     song.auto_fx = now.auto_fx;
     song.eq = now.eq;
     song
@@ -666,7 +665,6 @@ impl SolarumApp {
             return;
         }
         self.song.macros.energy = e.clamp(0.0, 1.0);
-        self.song.curve = false;
     }
 
     /// LIGHTS or FACE: opens that visualizer, switches to it, or closes it if it's on

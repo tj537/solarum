@@ -157,7 +157,7 @@ fn song_mode_and_auto_mode_take_turns() {
     app.song.auto = true;
     app.start_song(1, 0.0);
     assert_eq!(app.song_form, Some(1));
-    assert!(!app.song.auto && app.song.curve);
+    assert!(!app.song.auto);
     app.toggle_auto(0.0);
     assert_eq!(app.song_form, None);
     app.start_song(0, 0.0);
