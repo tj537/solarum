@@ -1009,6 +1009,7 @@ pub fn new_chapter(song: &mut Song, rng: &mut Rng, bold: bool) -> Change {
     let kinds = [0u8, 1, 1, 2, 2, 3, 3, 4];
     let first = *rng.pick(&kinds);
     let second = (bold || rng.chance(0.4)).then(|| pick_if(rng, &kinds, |k| k != first)).flatten();
+    let mut synth_came_in = false;
     for kind in std::iter::once(first).chain(second) {
         match kind {
             0 => {
@@ -1029,6 +1030,7 @@ pub fn new_chapter(song: &mut Song, rng: &mut Rng, bold: bool) -> Change {
                 let t = song.track_mut(v);
                 // The synth sometimes comes in with its new line
                 let mute = t.mute && !(v == Voice::Acid && rng.chance(0.4));
+                synth_came_in |= t.mute && !mute;
                 *t = Track {
                     mute,
                     volume: t.volume,
@@ -1065,12 +1067,36 @@ pub fn new_chapter(song: &mut Song, rng: &mut Rng, bold: bool) -> Change {
             }
         }
     }
+    if synth_came_in {
+        // The synth takes another extra's place – or waits, when the others are locked
+        let locked = song.tracks.map(|t| t.lock);
+        settle_extras(song, rng, |v| v != Voice::Acid && !locked[v.index()]);
+        if extras_on(song) > extras_cap(vibe) {
+            song.track_mut(Voice::Acid).mute = true;
+        }
+    }
     Change::NewChapter
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_new_chapter_keeps_the_extras_under_the_cap() {
+        for vibe in Vibe::ALL {
+            for seed in 0..60 {
+                let mut rng = Rng::new(seed);
+                let mut song = generate(vibe, &Default::default(), &mut rng);
+                song.track_mut(Voice::Acid).mute = true;
+                for _ in 0..4 {
+                    new_chapter(&mut song, &mut rng, true);
+                    let (on, cap) = (extras_on(&song), extras_cap(vibe));
+                    assert!(on <= cap, "{vibe:?} seed {seed}: {on} extras, cap {cap}");
+                }
+            }
+        }
+    }
 
     /// One auto mode change, big or small
     fn step(s: &mut Song, rng: &mut Rng) -> Option<Change> {
