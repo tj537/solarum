@@ -7,6 +7,7 @@
 
 use crate::form::{pattern_slot, Part, FORMS};
 use crate::gen::{self, Change};
+use crate::master::{Drive, Master};
 use crate::rng::Rng;
 use crate::sampler::{slot_of, Audition, SampleBuf, Sampler, Slots};
 use crate::song::{Song, Vibe, Voice, STEPS, TRACKS};
@@ -266,6 +267,8 @@ struct Build {
 }
 
 /// Crush: the sample rate it holds at, and its steps (on the square root of the level, about 6 bits)
+/// The mix into the master: the voices add up to well over full scale, the master wants headroom
+const MIX_TRIM: f32 = 0.5;
 const CRUSH_RATE: f32 = 9000.0;
 const CRUSH_STEPS: f32 = 24.0;
 /// Tape stop: seconds to stand still, and to spin back up when let go
@@ -611,7 +614,7 @@ pub struct Engine {
     /// `Cmd::Song`s taken in so far (sent back with every song)
     songs_in: u64,
     transpose: i8,
-    limiter: f32,
+    master: Master,
     peak: f32,
 
     shared: Arc<Shared>,
@@ -733,7 +736,7 @@ impl Engine {
             mute_pending: [None; TRACKS],
             songs_in: 0,
             transpose: 0,
-            limiter: 1.0,
+            master: Master::new(sr),
             peak: 0.0,
             shared,
             events,
@@ -1895,6 +1898,7 @@ impl Engine {
         // Crush fades in and out over about 30 ms; its held signal is rounded off a little above 5 kHz
         let crush_coef = 1.0 - (-1.0 / (0.03 * sr)).exp();
         let crush_lp = 1.0 - (-std::f32::consts::TAU * 5500.0 / sr).exp();
+        let drive = Drive::new(eq.drive);
         // The gate's edges take about 2 ms, at any sample rate
         let gate_coef = 1.0 - (-1.0 / (0.002 * sr)).exp();
 
@@ -2126,21 +2130,7 @@ impl Engine {
                     *x += lo * g_low + mid * g_mid + hi * g_high;
                 }
             }
-            // Glue: saturation with the DRIVE knob
-            let drive = 1.34 + (eq.drive - 0.3) * 1.6;
-            l = sat(l * drive * 0.7);
-            r = sat(r * drive * 0.7);
-            // Brick-wall-ish limiter
-            let pk = l.abs().max(r.abs());
-            let want = if pk > 0.95 { 0.95 / pk } else { 1.0 };
-            self.limiter = if want < self.limiter {
-                want
-            } else {
-                self.limiter + (want - self.limiter) * 0.0002
-            };
-            let g = self.limiter * self.song.master;
-            l *= g;
-            r *= g;
+            (l, r) = self.master.run(l * MIX_TRIM, r * MIX_TRIM, drive, self.song.master);
             // A NaN left in a filter or the reverb would keep everything silent (or loud noise
             // on some devices): play silence and let the UI build a fresh engine
             if !(l.is_finite() && r.is_finite()) {
@@ -3508,6 +3498,21 @@ mod levels {
     use super::*;
     use crate::song::Vibe;
 
+    /// Prints what every vibe's groove measures like (`listen::Heard`), three seeds each:
+    /// `cargo test --release print_mix -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn print_mix() {
+        for (i, vibe) in Vibe::ALL.into_iter().enumerate() {
+            for seed in 0..3u64 {
+                let song = gen::generate(vibe, &Default::default(), &mut Rng::new(i as u64 * 10 + seed));
+                let buf = render_offline(&song, 8, 44_100, 1);
+                let body = &buf[..buf.len() - 44_100 * 4];
+                println!("{:10} {seed}  {}", vibe.name(), crate::listen::hear(body, 44_100.0).line());
+            }
+        }
+    }
+
     /// Prints the loudness of each track – and each of its sounds – on its own, for balancing the mix:
     /// `cargo test --release print_levels -- --ignored --nocapture`
     #[test]
@@ -3531,15 +3536,17 @@ mod levels {
                 s.macros.dark = 0.0;
                 s.macros.energy = 1.0; // the ride only plays from 70
                 let buf = render_offline(&s, 4, 44_100, 1);
-                let n = buf.len() - 44_100 * 4; // without the tail
-                let rms = (buf[..n].iter().map(|x| x * x).sum::<f32>() / n as f32).sqrt();
-                let peak = buf.iter().fold(0.0f32, |m, x| m.max(x.abs()));
+                let body = &buf[..buf.len() - 44_100 * 4]; // without the tail
+                let h = crate::listen::hear(body, 44_100.0);
+                let bright = crate::listen::centroid(&crate::listen::spectrum(&crate::listen::mono(body), 4096), 44_100.0);
                 println!(
-                    "{:10} {:11} rms {:6.1} dB  peak {:6.1} dB",
+                    "{:10} {:13} {:6.1} LUFS  rms {:6.1} dB  peak {:6.1} dB  centre {:6.0} Hz",
                     v.name(),
                     v.sounds()[sound],
-                    20.0 * rms.log10(),
-                    20.0 * peak.log10()
+                    h.lufs,
+                    h.rms_db,
+                    crate::listen::db(h.peak),
+                    bright
                 );
             }
         }

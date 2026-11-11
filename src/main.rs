@@ -13,8 +13,11 @@ mod gen;
 mod home;
 mod library;
 mod library_ui;
+#[cfg(test)]
+mod listen;
 mod log;
 mod luna;
+mod master;
 mod midi;
 #[cfg(test)]
 mod offscreen;
