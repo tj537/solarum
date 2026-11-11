@@ -32,7 +32,7 @@ src/
   theme.rs      colours, fonts (Space Grotesk, Anton, Phosphor icons), egui style
   song.rs       data model: Song → 8 Tracks (sound, tune, decay, lock) → 16 Steps, vibes, scales, chord progressions, moods, macros, master EQ (all `Copy`)
   gen.rs        groove generator (vibes, sounds per vibe, per-track dice), `evolve` and `new_chapter` for the auto mode
-  engine/       sequencer clock, voices, mixer, master and live effects, drop, auto arrangement, song mode, patterns on the next bar (`mod.rs`), its tests (`tests.rs`) and the reports for balancing the mix by numbers (`levels.rs`)
+  engine/       sequencer clock, voices, mixer, master and live effects, patterns on the next bar (`mod.rs`); the arrangement – the auto mode's cycles, plans, breakdowns, build-ups, drops, fills, the energy curve, AUTO FX's knobs and song mode (`arrange.rs`); its tests (`tests.rs`) and the reports for balancing the mix by numbers (`levels.rs`)
   synth.rs      the sounds (every voice has several models) and the SVF filter
   fx.rs         the send effects: `Delay` (ping-pong; every repeat darker and thinner, the time glides), `Reverb` (a feedback delay network: low cut, pre-delay, four diffusers, eight lines through a Householder matrix – a smooth tail, no kick in the room) and `Rumble`
   master.rs     the master bus: DC blocker, `Drive` (the DRIVE knob – saturates the lows first, the whole mix only from "hot" on), a look-ahead `Limiter` and `soft_clip` for the last decibel; the mix comes in with headroom (`engine::MIX_TRIM`)
