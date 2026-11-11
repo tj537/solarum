@@ -22,6 +22,9 @@ pub struct Heard {
     pub dc: f32,
     /// −1 (out of phase) … 0 (unrelated) … 1 (mono)
     pub width: f32,
+    /// How much of everything above 300 Hz is the difference between left and right, in dB
+    /// below what they share: −60 is mono, −12 to −6 a wide mix
+    pub side_db: f32,
     /// Share of the energy per band in dB (see `BANDS`)
     pub bands: [f32; 6],
 }
@@ -66,6 +69,9 @@ pub fn hear(stereo: &[f32], sr: f32) -> Heard {
     let peak = peak(stereo);
     let rms = rms(stereo);
     let power = spectrum(&mono(stereo), 4096);
+    let side: Vec<f32> = stereo.as_chunks::<2>().0.iter().map(|f| (f[0] - f[1]) * 0.5).collect();
+    let above = |p: &[f32]| band_power(p, sr, 300.0, sr * 0.5);
+    let side_db = 10.0 * (above(&spectrum(&side, 4096)) / above(&power).max(1e-20)).max(1e-6).log10();
     let total: f32 = power.iter().sum::<f32>().max(1e-20);
     let mut lo = 0.0;
     let bands = BANDS.map(|(_, hi)| {
@@ -80,6 +86,7 @@ pub fn hear(stereo: &[f32], sr: f32) -> Heard {
         crest_db: db(peak) - db(rms),
         dc: ((sl / n).abs().max((sr_ / n).abs())) as f32,
         width: (lr / (ll * rr).sqrt().max(1e-20)) as f32,
+        side_db,
         bands,
     }
 }
@@ -265,13 +272,11 @@ impl Heard {
             .map(|((name, _), d)| format!("{name} {d:5.1}"))
             .collect();
         format!(
-            "peak {:4.2}  {:6.1} LUFS  rms {:6.1} dB  crest {:4.1} dB  width {:4.2}  dc {:.4} | {}",
+            "peak {:4.2}  {:6.1} LUFS  crest {:4.1} dB  side {:5.1} dB | {}",
             self.peak,
             self.lufs,
-            self.rms_db,
             self.crest_db,
-            self.width,
-            self.dc,
+            self.side_db,
             bands.join("  ")
         )
     }
@@ -291,7 +296,7 @@ mod tests {
         assert!((h.rms_db + 3.01).abs() < 0.05, "{}", h.rms_db);
         assert!(h.lufs.abs() < 0.4, "{}", h.lufs);
         assert!((h.crest_db - 3.01).abs() < 0.05);
-        assert!(h.width > 0.999 && h.dc < 1e-3);
+        assert!(h.width > 0.999 && h.side_db < -50.0 && h.dc < 1e-3);
         // … and all of it sits in the mids
         assert!(h.bands[3] > -0.1, "{:?}", h.bands);
     }

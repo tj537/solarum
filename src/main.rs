@@ -9,6 +9,7 @@ mod engine;
 mod face;
 mod file;
 mod form;
+mod fx;
 mod gen;
 mod home;
 mod library;

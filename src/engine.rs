@@ -6,6 +6,7 @@
 //! song back as an [`Event`]. The same engine renders WAV exports offline.
 
 use crate::form::{pattern_slot, Part, FORMS};
+use crate::fx::{Delay, Reverb, Rumble};
 use crate::gen::{self, Change};
 use crate::master::{Drive, Master};
 use crate::rng::Rng;
