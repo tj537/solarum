@@ -642,6 +642,10 @@ impl Hat {
 
 // ───────────────────────────── Synths ─────────────────────────────
 
+/// Seconds a bass or synth note takes to come up: short enough to stay snappy, long enough
+/// not to click
+const NOTE_ATTACK: f32 = 0.0015;
+
 /// The bass: rolling filtered saw, sub, reese, pulse or donk
 #[derive(Clone)]
 pub struct Bass {
@@ -657,6 +661,10 @@ pub struct Bass {
     adecay: f32,
     fdecay: f32,
     model: u8,
+    /// The loudness that plays: it follows the envelope within a millisecond or two, so a
+    /// note that starts in the middle of the wave doesn't click
+    level: f32,
+    slew: f32,
 }
 
 impl Bass {
@@ -674,6 +682,8 @@ impl Bass {
             adecay: 0.0,
             fdecay: 0.0,
             model: 0,
+            level: 0.0,
+            slew: 1.0,
         }
     }
 
@@ -685,6 +695,7 @@ impl Bass {
         self.env = 1.0;
         self.fenv = 1.0;
         self.gate = gate;
+        self.slew = 1.0 - decay_coef(NOTE_ATTACK, sr);
         if model != self.model {
             self.model = model;
             self.saw2.phase = (self.saw.phase + 0.5) % 1.0;
@@ -705,6 +716,7 @@ impl Bass {
     /// `bright` 0…1 (energy), `dark` 0…1 lowers the filter
     pub fn next(&mut self, sr: f32, bright: f32, dark: f32) -> f32 {
         if self.env < 1e-4 {
+            self.level = 0.0;
             return 0.0;
         }
         if self.gate > 0.0 {
@@ -714,13 +726,14 @@ impl Bass {
             self.env *= 0.995; // quick release
         }
         self.fenv *= self.fdecay;
+        self.level += (self.env * self.amp - self.level) * self.slew;
         self.sub = (self.sub + self.hz / sr) % 1.0;
         let sub = (self.sub * TAU).sin();
         let open = 1.0 - dark;
         let y = match self.model {
             1 => {
                 // Sub: a sine with a touch of drive
-                return sat((sub + (self.sub * TAU * 2.0).sin() * 0.12 * (0.5 + bright)) * 1.3) * self.env * self.amp * 0.6;
+                return sat((sub + (self.sub * TAU * 2.0).sin() * 0.12 * (0.5 + bright)) * 1.3) * self.level * 0.6;
             }
             2 => {
                 // Reese: two detuned saws, slowly beating
@@ -757,7 +770,7 @@ impl Bass {
                 self.lp.run(x).lp * 1.8
             }
         };
-        sat(y) * self.env * self.amp
+        sat(y) * self.level
     }
 }
 
@@ -788,6 +801,9 @@ pub struct Acid {
     rise: f32,
     rise_coef: f32,
     model: u8,
+    /// The loudness that plays (see `Bass::level`)
+    level: f32,
+    slew: f32,
 }
 
 impl Acid {
@@ -813,6 +829,8 @@ impl Acid {
             rise: 1.0,
             rise_coef: 0.0,
             model: u8::MAX,
+            level: 0.0,
+            slew: 1.0,
         };
         a.set_model(0, [0.0, 3.0, 7.0]);
         a
@@ -903,6 +921,7 @@ impl Acid {
         self.rise = if model == 5 { 0.0 } else { 1.0 };
         self.rise_coef = decay_coef(0.12 * decay, sr);
         self.gate = gate;
+        self.slew = 1.0 - decay_coef(NOTE_ATTACK, sr);
     }
 
     /// Slide: change pitch smoothly, keep the envelopes running
@@ -923,6 +942,7 @@ impl Acid {
     /// `acid` 0…1: filter opening and resonance
     pub fn next(&mut self, sr: f32, acid: f32) -> f32 {
         if self.env < 1e-4 {
+            self.level = 0.0;
             return 0.0;
         }
         self.hz = self.target_hz + (self.hz - self.target_hz) * self.glide;
@@ -974,7 +994,8 @@ impl Acid {
         }
         let y = self.lp2.run(self.lp.run(x).lp).lp;
         let level = self.amp * (0.75 + self.accent * 0.35) * level;
-        sat(y * drive) * self.env * level * 0.8
+        self.level += (self.env * level - self.level) * self.slew;
+        sat(y * drive) * self.level * 0.8
     }
 }
 
@@ -1118,6 +1139,24 @@ mod tests {
             last = x;
         }
         assert!(jump < 0.15, "a step of {jump:.2} between two samples");
+    }
+
+    #[test]
+    fn a_bass_note_starts_without_a_click() {
+        // The sub is a plain sine: any step between two samples is a click. Notes start
+        // wherever the wave happens to be, also on top of the last one.
+        let mut bass = Bass::new(SR);
+        let mut last = 0.0;
+        let mut jump = 0.0f32;
+        for i in 0..(SR * 0.6) as usize {
+            if i % 5_000 == 0 {
+                bass.trigger(41.0, 1.0, 3_000.0, SR, 1, 1.0);
+            }
+            let x = bass.next(SR, 0.5, 0.45);
+            jump = jump.max((x - last).abs());
+            last = x;
+        }
+        assert!(jump < 0.03, "a step of {jump:.3} between two samples");
     }
 
     #[test]
