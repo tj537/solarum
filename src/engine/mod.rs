@@ -1932,6 +1932,8 @@ impl Engine {
             self.pump_env *= pump_coef;
             // Everything but the kick breathes with it
             let pg = 1.0 - pump * 0.85 * self.pump_env.min(1.0).powf(0.6);
+            let (synth_l, synth_r) = self.acid.next(sr, acid);
+            let synth_gain = vol[7] * (1.0 - duck * 0.3) * pg;
             let v = [
                 kick_raw * vol[0],
                 self.clap.next(sr, &mut self.rng) * vol[1] * pg,
@@ -1940,7 +1942,7 @@ impl Engine {
                 self.open_hat.next(sr, &mut self.rng) * vol[4] * pg,
                 self.ride.next(sr, &mut self.rng) * vol[5] * pg,
                 self.bass.next(sr, self.energy_smooth, dark) * vol[6] * 2.0 * (1.0 - duck * 0.7) * pg,
-                self.acid.next(sr, acid) * vol[7] * (1.0 - duck * 0.3) * pg,
+                (synth_l + synth_r) * 0.5 * synth_gain,
             ];
             let mut v = v;
             for (i, x) in v.iter_mut().enumerate().skip(1) {
@@ -1965,6 +1967,10 @@ impl Engine {
                 dr += x * ds * (1.0 + p * 0.5);
                 rv += x * VERB_SEND[i] * (0.15 + space * 1.6) * break_space;
             }
+            // What the synth's chords have left and right of their middle
+            let synth_side = (synth_l - synth_r) * 0.5 * synth_gain;
+            l += synth_side;
+            r -= synth_side;
             // Rumble and the drop
             let rumble = self.rumble.run(kick_raw * vol[0], duck) * dark * 1.3;
             l += rumble;

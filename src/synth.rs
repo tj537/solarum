@@ -784,6 +784,9 @@ pub struct Acid {
     gain: [f32; 6],
     lp: Svf,
     lp2: Svf,
+    /// The right channel's filters (the chord sounds are stereo)
+    lp_r: Svf,
+    lp2_r: Svf,
     hz: f32,
     target_hz: f32,
     glide: f32,
@@ -814,6 +817,8 @@ impl Acid {
             gain: [0.0; 6],
             lp: Svf::new(800.0, 4.0, sr),
             lp2: Svf::new(800.0, 0.7, sr),
+            lp_r: Svf::new(800.0, 4.0, sr),
+            lp2_r: Svf::new(800.0, 0.7, sr),
             hz: 110.0,
             target_hz: 110.0,
             glide: 0.0,
@@ -939,11 +944,20 @@ impl Acid {
         }
     }
 
-    /// `acid` 0…1: filter opening and resonance
-    pub fn next(&mut self, sr: f32, acid: f32) -> f32 {
+    /// The mono sum of `next`
+    #[cfg(test)]
+    pub fn next_mono(&mut self, sr: f32, acid: f32) -> f32 {
+        let (l, r) = self.next(sr, acid);
+        (l + r) * 0.5
+    }
+
+    /// Left and right. `acid` 0…1: filter opening and resonance. The sounds that stack
+    /// detuned saws (stab, hoover, pad, organ, supersaw) spread them across the stereo
+    /// field; the 303 and the pluck stay in the middle.
+    pub fn next(&mut self, sr: f32, acid: f32) -> (f32, f32) {
         if self.env < 1e-4 {
             self.level = 0.0;
-            return 0.0;
+            return (0.0, 0.0);
         }
         self.hz = self.target_hz + (self.hz - self.target_hz) * self.glide;
         if self.gate > 0.0 {
@@ -986,18 +1000,38 @@ impl Acid {
         self.lp.set(cutoff, q, sr);
         self.lp2.set(cutoff * 1.6, 0.6, sr);
         let hz = self.hz * 2f32.powf(-self.bend * 5.0 / 12.0);
-        let mut x = 0.0;
+        let wide = matches!(self.model, 2 | 4 | 5 | 6 | 7);
+        let (mut left, mut right) = (0.0, 0.0);
         for i in 0..6 {
             if self.gain[i] != 0.0 {
-                x += self.saws[i].next(hz * self.ratio[i], sr) * self.gain[i];
+                let x = self.saws[i].next(hz * self.ratio[i], sr) * self.gain[i];
+                // Every other saw leans the other way; together they are the mono sound
+                let lean = if !wide {
+                    0.0
+                } else if i % 2 == 0 {
+                    STEREO_SPREAD
+                } else {
+                    -STEREO_SPREAD
+                };
+                left += x * (1.0 + lean);
+                right += x * (1.0 - lean);
             }
         }
-        let y = self.lp2.run(self.lp.run(x).lp).lp;
         let level = self.amp * (0.75 + self.accent * 0.35) * level;
         self.level += (self.env * level - self.level) * self.slew;
-        sat(y * drive) * self.level * 0.8
+        let out = self.level * 0.8;
+        let l = sat(self.lp2.run(self.lp.run(left).lp).lp * drive) * out;
+        if !wide {
+            return (l, l);
+        }
+        self.lp_r.tune_like(&self.lp);
+        self.lp2_r.tune_like(&self.lp2);
+        (l, sat(self.lp2_r.run(self.lp_r.run(right).lp).lp * drive) * out)
     }
 }
+
+/// How far the saws of a chord sound lean left and right (0 = mono, 1 = hard)
+const STEREO_SPREAD: f32 = 0.4;
 
 /// Lifts the 303 (tamed before its drive) to the loudness of the other synth sounds
 const ACID_LEVEL: f32 = 1.6;
@@ -1097,7 +1131,7 @@ mod tests {
         for m in 0..5 {
             let mut acid = Acid::new(SR);
             acid.trigger(53.0, 1.0, true, 4000.0, SR, m, [0.0, 3.0, 7.0], 1.0);
-            let p = peak_and_finite(|| acid.next(SR, 1.0), 20_000);
+            let p = peak_and_finite(|| acid.next_mono(SR, 1.0), 20_000);
             assert!(p > 0.2 && p <= 1.5, "acid {m}: {p}");
         }
     }
@@ -1110,11 +1144,39 @@ mod tests {
         for acid in [0.2, 0.5, 1.0] {
             let mut v = Acid::new(SR);
             v.trigger(53.0, 1.0, true, SR * 0.4, SR, 0, [0.0, 3.0, 7.0], 1.0);
-            let out: Vec<f32> = (0..(SR * 0.4) as usize).map(|_| v.next(SR, acid)).collect();
+            let out: Vec<f32> = (0..(SR * 0.4) as usize).map(|_| v.next_mono(SR, acid)).collect();
             let crest = listen::db(listen::peak(&out)) - listen::db(listen::rms(&out));
             assert!(crest > 5.0, "acid {acid}: crest {crest:.1} dB");
             let step = out.windows(2).fold(0.0f32, |m, w| m.max((w[1] - w[0]).abs()));
             assert!(step < 0.8 * listen::peak(&out), "acid {acid}: an edge of {step:.2}");
+        }
+    }
+
+    #[test]
+    fn chords_are_wide_and_the_303_sits_in_the_middle() {
+        use crate::listen;
+        let play = |model: u8| {
+            let mut v = Acid::new(SR);
+            v.trigger(53.0, 1.0, false, SR, SR, model, [0.0, 3.0, 7.0], 1.0);
+            let out: Vec<f32> = (0..SR as usize)
+                .flat_map(|_| {
+                    let (l, r) = v.next(SR, 0.6);
+                    [l, r]
+                })
+                .collect();
+            listen::hear(&out, SR)
+        };
+        for model in [2, 4, 5, 6, 7] {
+            let h = play(model);
+            assert!(
+                h.side_db > -20.0 && h.width > 0.2,
+                "sound {model}: side {:.1} dB, width {:.2}",
+                h.side_db,
+                h.width
+            );
+        }
+        for model in [0, 1, 3] {
+            assert!(play(model).side_db < -50.0, "sound {model} is mono");
         }
     }
 
@@ -1215,7 +1277,7 @@ mod tests {
             for (note, acid) in [(41.0f32, 0.5), (53.0, 0.2), (53.0, 0.5), (53.0, 1.0), (77.0, 0.5), (77.0, 1.0)] {
                 let mut v = Acid::new(SR);
                 v.trigger(note, 1.0, true, SR * 0.4, SR, model, [0.0, 3.0, 7.0], 1.0);
-                let out: Vec<f32> = (0..(SR * 0.5) as usize).map(|_| v.next(SR, acid)).collect();
+                let out: Vec<f32> = (0..(SR * 0.5) as usize).map(|_| v.next_mono(SR, acid)).collect();
                 let hz = midi_hz(note);
                 let wanted: Vec<f32> = if matches!(model, 2 | 5 | 6) {
                     [0.0f32, 3.0, 7.0]
