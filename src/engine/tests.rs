@@ -169,6 +169,72 @@ fn steps_fire_on_time() {
     assert_eq!(shared.step.load(Ordering::Relaxed), 8);
 }
 
+/// Renders frame by frame and returns the frame (counted from 1) on which each step fired
+fn step_frames(e: &mut Engine, shared: &Shared, frames: usize, mut each: impl FnMut(&mut Engine, usize)) -> Vec<(u64, usize)> {
+    let mut fired = Vec::new();
+    let mut frame = [0.0f32; 2];
+    let mut last = None;
+    for n in 1..=frames {
+        each(e, n);
+        e.render(&mut frame);
+        let step = shared.step.load(Ordering::Relaxed);
+        if last != Some(step) {
+            fired.push((step, n));
+            last = Some(step);
+        }
+    }
+    fired
+}
+
+#[test]
+fn swing_delays_odd_steps_to_the_sample() {
+    for sr in [44_100.0, 48_000.0] {
+        for swing in [0.0, 0.5, 1.0] {
+            let mut song = Song::empty();
+            song.bpm = 128.0;
+            song.swing = swing;
+            let shared = Shared::new();
+            let mut e = Engine::new(sr, song, shared.clone(), None, 1);
+            e.handle(Cmd::Play);
+            let len = e.step_len();
+            let fired = step_frames(&mut e, &shared, (len * 32.75) as usize, |_, _| {});
+            assert_eq!(fired.len(), 33, "{sr} Hz, swing {swing}: every step once");
+            for (step, frame) in fired {
+                let delay = if step % 2 == 1 { swing as f64 * 0.5 } else { 0.0 };
+                let exact = (step as f64 + delay) * len;
+                assert!(
+                    (frame as f64 - exact).abs() <= 1.0,
+                    "{sr} Hz, swing {swing}: step {step} on frame {frame}, due at {exact:.1}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_tempo_change_mid_bar_neither_skips_nor_doubles_a_step() {
+    for (from, to) in [(120.0, 174.0), (174.0, 90.0)] {
+        let mut song = Song::empty();
+        song.bpm = from;
+        song.swing = 1.0;
+        let shared = Shared::new();
+        let mut e = Engine::new(48_000.0, song, shared.clone(), None, 1);
+        e.handle(Cmd::Play);
+        // Change the tempo inside an odd step, before its swung hit
+        let at = (e.step_len() * 5.1) as usize;
+        let fired = step_frames(&mut e, &shared, 48_000 * 2, |e, n| {
+            if n == at {
+                let mut s = e.song;
+                s.bpm = to;
+                e.handle(Cmd::Song(Box::new(s)));
+            }
+        });
+        let steps: Vec<u64> = fired.iter().map(|&(s, _)| s).collect();
+        let expected: Vec<u64> = (0..steps.len() as u64).collect();
+        assert_eq!(steps, expected, "{from} → {to} bpm");
+    }
+}
+
 #[test]
 fn by_hand_the_pattern_plays_exactly_as_written() {
     // One hat and one rim, energy high and low: no ghost hats, nothing thinned out
@@ -1304,5 +1370,73 @@ fn lunas_sets_keep_air_and_play_riffs() {
             "{vibe:?}: {:.1} tracks on average",
             tracks as f32 / 96.0
         );
+    }
+}
+
+#[test]
+fn the_drop_is_louder_than_the_build_ups_last_bar() {
+    use crate::listen::loudness;
+    for vibe in Vibe::ALL {
+        let mut song = gen::generate(vibe, &Default::default(), &mut Rng::new(6));
+        song.macros.energy = 0.9;
+        let sr = 44_100.0;
+        let mut e = Engine::new(sr, song, Shared::new(), None, 2);
+        e.handle(Cmd::Play);
+        let bar = 2 * (e.step_len() * STEPS as f64) as usize;
+        let mut buf = vec![0.0; bar / 2];
+        e.render(&mut buf);
+        e.handle(Cmd::Drop);
+        // The rest of bar 0, then the build-up's two bars, then the drop's bar
+        let mut rest = vec![0.0; bar / 2];
+        e.render(&mut rest);
+        let mut first = vec![0.0; bar];
+        e.render(&mut first);
+        let mut last = vec![0.0; bar];
+        e.render(&mut last);
+        let mut drop = vec![0.0; bar];
+        e.render(&mut drop);
+        let (build, dropped) = (loudness(&last, sr), loudness(&drop, sr));
+        assert!(dropped > build, "{vibe:?}: build-up {build:.1} LUFS, drop {dropped:.1} LUFS");
+    }
+}
+
+#[test]
+fn every_song_form_changes_on_bar_lines_and_ends() {
+    for (f, form) in FORMS.iter().enumerate() {
+        let [a, b, _] = patterns(180.0);
+        let shared = Shared::new();
+        let mut e = Engine::new(8_000.0, a, shared.clone(), None, 1);
+        e.handle(Cmd::Arrange(Some(Box::new(Arrangement {
+            patterns: [Some(a), Some(b), None, None],
+            form: f,
+            fallback: a,
+        }))));
+        e.handle(Cmd::Play);
+        let mut buf = vec![0.0; 2 * e.step_len() as usize];
+        let mut starts = Vec::new();
+        let mut last_bar = 0;
+        for _ in 0..STEPS * (form.bars() as usize + 4) {
+            e.render(&mut buf);
+            if !e.playing {
+                break;
+            }
+            last_bar = e.bar_now;
+            let start = shared.part_start.load(Ordering::Relaxed);
+            if starts.last() != Some(&start) {
+                starts.push(start);
+            }
+        }
+        let due: Vec<u64> = form
+            .sections
+            .iter()
+            .scan(0, |at, s| {
+                let start = *at;
+                *at += s.bars as u64;
+                Some(start)
+            })
+            .collect();
+        assert_eq!(starts, due, "{}: sections start on their bars", form.name);
+        assert!(!e.playing, "{}: the song ends", form.name);
+        assert_eq!(last_bar + 1, form.bars() as u64, "{}: it ends after its last bar", form.name);
     }
 }
