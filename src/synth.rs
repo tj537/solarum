@@ -206,6 +206,11 @@ pub struct Kick {
     env: f32,
     decay: f32,
     click: f32,
+    /// What it played last, and what is left of the hit before: a new hit fades the old
+    /// one out over a couple of milliseconds instead of cutting it (a click in every roll)
+    last: f32,
+    cut: f32,
+    cut_decay: f32,
     pub tune: f32,
     pub drive: f32,
     pub sweep: f32,
@@ -223,6 +228,9 @@ impl Kick {
             env: 0.0,
             decay: 1.0,
             click: 0.0,
+            last: 0.0,
+            cut: 0.0,
+            cut_decay: 0.0,
             tune: 48.0,
             drive: 1.6,
             sweep: 2.8,
@@ -242,6 +250,8 @@ impl Kick {
 
     /// `length` in seconds (0.2 … 0.7)
     pub fn trigger(&mut self, vel: f32, length: f32, sr: f32) {
+        self.cut = self.last;
+        self.cut_decay = decay_coef(0.0007, sr);
         self.t = 0.0;
         self.phase = 0.0;
         self.amp = vel;
@@ -257,6 +267,7 @@ impl Kick {
 
     pub fn next(&mut self, sr: f32, rng: &mut Rng) -> f32 {
         if self.env < 1e-4 {
+            self.last = 0.0;
             return 0.0;
         }
         let t = self.t / sr;
@@ -268,7 +279,9 @@ impl Kick {
         self.click *= 0.985;
         self.env *= self.decay;
         self.t += 1.0;
-        sat((body + click) * self.drive) / sat(self.drive) * self.amp * self.gain
+        self.cut *= self.cut_decay;
+        self.last = sat((body + click) * self.drive) / sat(self.drive) * self.amp * self.gain + self.cut;
+        self.last
     }
 }
 
@@ -937,11 +950,16 @@ impl Acid {
             _ => {
                 let base = 140.0 + a * a * 1800.0;
                 let depth = (500.0 + a * 3600.0) * (1.0 + self.accent * 0.8);
+                let q = 2.5 + a * 9.0 + self.accent * 2.0;
+                // The resonance is tamed before the drive (a filter with Q 12 puts out
+                // twelve times the wave): the peak sings and an accent bites, but the line
+                // never flattens into a square wave
+                let drive = (1.5 + self.accent * 0.7) / q.sqrt();
                 (
                     base + depth * self.fenv,
-                    2.5 + a * 9.0 + self.accent * 2.0,
-                    1.6 + a * 1.6,
-                    if self.model == 1 { 0.85 } else { 1.0 },
+                    q,
+                    drive,
+                    if self.model == 1 { ACID_LEVEL * 0.68 } else { ACID_LEVEL },
                 )
             }
         };
@@ -959,6 +977,9 @@ impl Acid {
         sat(y * drive) * self.env * level * 0.8
     }
 }
+
+/// Lifts the 303 (tamed before its drive) to the loudness of the other synth sounds
+const ACID_LEVEL: f32 = 1.6;
 
 /// A long low "boom" for the drop
 #[derive(Clone, Default)]
@@ -1056,8 +1077,47 @@ mod tests {
             let mut acid = Acid::new(SR);
             acid.trigger(53.0, 1.0, true, 4000.0, SR, m, [0.0, 3.0, 7.0], 1.0);
             let p = peak_and_finite(|| acid.next(SR, 1.0), 20_000);
-            assert!(p > 0.2 && p <= 1.2, "acid {m}: {p}");
+            assert!(p > 0.2 && p <= 1.5, "acid {m}: {p}");
         }
+    }
+
+    #[test]
+    fn the_303_squelches_instead_of_buzzing() {
+        // The resonant filter into the drive used to flatten the line into a square wave
+        // (crest factor 2–3 dB, edges a sample wide). It keeps its shape at every ACID setting.
+        use crate::listen;
+        for acid in [0.2, 0.5, 1.0] {
+            let mut v = Acid::new(SR);
+            v.trigger(53.0, 1.0, true, SR * 0.4, SR, 0, [0.0, 3.0, 7.0], 1.0);
+            let out: Vec<f32> = (0..(SR * 0.4) as usize).map(|_| v.next(SR, acid)).collect();
+            let crest = listen::db(listen::peak(&out)) - listen::db(listen::rms(&out));
+            assert!(crest > 5.0, "acid {acid}: crest {crest:.1} dB");
+            let step = out.windows(2).fold(0.0f32, |m, w| m.max((w[1] - w[0]).abs()));
+            assert!(step < 0.8 * listen::peak(&out), "acid {acid}: an edge of {step:.2}");
+        }
+    }
+
+    #[test]
+    fn a_kick_roll_does_not_click() {
+        // A new hit while the last one still rings: the old one fades out, it isn't cut off
+        let mut rng = Rng::new(3);
+        let mut kick = Kick::new();
+        kick.set_model(&KICKS[1]); // the 808: next to no click of its own
+        kick.drive = 2.5 * KICKS[1].drive;
+        let mut last = 0.0;
+        let mut jump = 0.0f32;
+        for i in 0..(SR * 0.5) as usize {
+            // 16ths at 150 BPM, each cutting into the one before
+            if i % 4410 == 0 {
+                kick.trigger(0.9, 0.5, SR);
+            }
+            let x = kick.next(SR, &mut rng);
+            if i > 0 {
+                jump = jump.max((x - last).abs());
+            }
+            last = x;
+        }
+        assert!(jump < 0.15, "a step of {jump:.2} between two samples");
     }
 
     #[test]
@@ -1086,5 +1146,77 @@ mod tests {
             peak = peak.max(f.run(x).lp.abs());
         }
         assert!(peak < 0.01);
+    }
+
+    /// `cargo test --release print_voices -- --ignored --nocapture`: every pitched sound alone –
+    /// how peaky it is and how much of it is not the note (aliasing, noise, fuzz)
+    #[test]
+    #[ignore]
+    fn print_voices() {
+        use crate::listen;
+        let harmonics = |hz: f32| (1..).map(|k| k as f32 * hz).take_while(|f| *f < SR / 2.0).collect::<Vec<_>>();
+        let step = |b: &[f32]| b.windows(2).fold(0.0f32, |m, w| m.max((w[1] - w[0]).abs()));
+        for model in 0..7u8 {
+            for note in [29.0f32, 41.0, 53.0] {
+                let mut bass = Bass::new(SR);
+                bass.trigger(note, 1.0, SR * 0.4, SR, model, 1.0);
+                let out: Vec<f32> = (0..(SR * 0.5) as usize).map(|_| bass.next(SR, 0.6, 0.45)).collect();
+                let hz = midi_hz(note);
+                println!(
+                    "bass {model} note {note}: peak {:.2} crest {:4.1} dB dirt {:5.1} dB step {:.3} centre {:5.0}",
+                    listen::peak(&out),
+                    listen::db(listen::peak(&out)) - listen::db(listen::rms(&out)),
+                    listen::dirt_db(&out, SR, &harmonics(hz), 14.0),
+                    step(&out),
+                    listen::centroid(&listen::spectrum(&out, 4096), SR)
+                );
+            }
+        }
+        for model in 0..8u8 {
+            for (note, acid) in [(41.0f32, 0.5), (53.0, 0.2), (53.0, 0.5), (53.0, 1.0), (77.0, 0.5), (77.0, 1.0)] {
+                let mut v = Acid::new(SR);
+                v.trigger(note, 1.0, true, SR * 0.4, SR, model, [0.0, 3.0, 7.0], 1.0);
+                let out: Vec<f32> = (0..(SR * 0.5) as usize).map(|_| v.next(SR, acid)).collect();
+                let hz = midi_hz(note);
+                let wanted: Vec<f32> = if matches!(model, 2 | 5 | 6) {
+                    [0.0f32, 3.0, 7.0]
+                        .iter()
+                        .flat_map(|s| harmonics(hz * 2f32.powf(s / 12.0)))
+                        .collect()
+                } else {
+                    harmonics(hz)
+                };
+                println!(
+                    "acid {model} note {note} acid {acid}: peak {:.2} crest {:4.1} dB dirt {:5.1} dB step {:.3} centre {:5.0}",
+                    listen::peak(&out),
+                    listen::db(listen::peak(&out)) - listen::db(listen::rms(&out)),
+                    listen::dirt_db(&out, SR, &wanted, 30.0),
+                    step(&out),
+                    listen::centroid(&listen::spectrum(&out, 4096), SR)
+                );
+            }
+        }
+        let mut rng = Rng::new(1);
+        for (m, model) in KICKS.iter().enumerate() {
+            let mut kick = Kick::new();
+            kick.set_model(model);
+            kick.drive = 2.5 * model.drive + model.drive_add;
+            kick.tune = 50.0 * model.tune;
+            kick.trigger(0.9, 0.2 * model.length, SR);
+            let mut out: Vec<f32> = (0..(SR * 0.115) as usize).map(|_| kick.next(SR, &mut rng)).collect();
+            let before = *out.last().unwrap();
+            kick.trigger(0.9, 0.2 * model.length, SR);
+            let after = kick.next(SR, &mut rng);
+            out.push(after);
+            out.extend((0..(SR * 0.4) as usize).map(|_| kick.next(SR, &mut rng)));
+            println!(
+                "kick {m}: peak {:.2} crest {:4.1} dB retrigger jump {:.3} (max step {:.3}) centre {:5.0}",
+                listen::peak(&out),
+                listen::db(listen::peak(&out)) - listen::db(listen::rms(&out)),
+                (after - before).abs(),
+                step(&out),
+                listen::centroid(&listen::spectrum(&out, 4096), SR)
+            );
+        }
     }
 }
