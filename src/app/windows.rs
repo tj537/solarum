@@ -303,6 +303,8 @@ impl SolarumApp {
                                 .color(FAINT),
                         );
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            // Clear of the scroll bar, as far in as the version on the left
+                            ui.add_space(GAP);
                             ui.hyperlink_to(format!("{}  github.com/tj537/solarum", ph::GITHUB_LOGO), update::REPO_URL);
                         });
                     });

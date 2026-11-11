@@ -584,7 +584,8 @@ impl SolarumApp {
         );
         let set_r = Rect::from_min_max(pos2(off_r.left() - 36.0, off_r.top()), pos2(off_r.left() - 4.0, off_r.bottom()));
         let off = key(ui, off_r, "os_off", "OFF", false).on_hover_text("Switch the auto mode off (or type off)");
-        let set = key(ui, set_r, "os_set", "SET", false).on_hover_text("Settings: how often Luna changes something, AUTO FX");
+        let set = key(ui, set_r, "os_set", "SET", false)
+            .on_hover_text("Settings: how often Luna changes something, and AUTO FX (breakdowns, build-ups, drops)");
         let popup = ui.make_persistent_id("auto_bars");
         if set.clicked() {
             ui.memory_mut(|m| m.toggle_popup(popup));
@@ -608,7 +609,8 @@ impl SolarumApp {
             ACID,
             egui::Stroke::NONE,
         ));
-        let shuf = key(ui, shuf_r, "os_shuffle", "SHUFFLE", true).on_hover_text("Rolls the dice on every track that's on");
+        let shuf = key(ui, shuf_r, "os_shuffle", "SHUFFLE", true)
+            .on_hover_text("New patterns on every track that's on – locked tracks stay as they are");
         let popup = ui.make_persistent_id("term_vibes");
         if vibe.clicked() {
             ui.memory_mut(|m| m.toggle_popup(popup));
