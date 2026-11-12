@@ -15,7 +15,7 @@ egui-phosphor = "0.9"
 serde = { version = "1", features = ["derive"] }
 cpal = "0.17"
 midir = "0.11"
-rfd = "0.17"
+rfd = "0.18"
 ron = "0.12"
 # Importing your own sounds
 symphonia = { version = "0.6", default-features = false, features = ["wav", "aiff", "mp3", "flac", "ogg", "vorbis", "pcm"] }
